@@ -1,0 +1,1 @@
+screen -r -S telega
