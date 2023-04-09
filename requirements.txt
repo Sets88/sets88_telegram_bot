@@ -1,0 +1,3 @@
+telebot
+aiohttp
+openai

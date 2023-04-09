@@ -1,0 +1,5 @@
+{
+    "ALLOWED_USER_NAMES": ["some_username"],
+    "OPENAI_API_KEY": "****",
+    "TELEGRAM_TOKEN": "****"
+}
