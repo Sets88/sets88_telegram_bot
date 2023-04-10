@@ -1,12 +1,16 @@
 import os
 import json
+import asyncio
+from io import BytesIO
 import functools
 from random import randrange
 from time import time
 import logging
+from typing import BinaryIO
 
 import openai
 from telebot.types import Message
+from pydub import AudioSegment
 
 import config
 from telebot_nav import TeleBotNav
@@ -148,14 +152,51 @@ class OpenAi():
         )
         return response['data'][0]['url']
 
+    async def whisper_transcribe(self, audio: BinaryIO) -> str:
+        response = await openai.Audio.atranscribe(
+            model='whisper-1',
+            file=audio,
+        )
+
+        return response.text
+
+
+def get_mp3_from_ogg(file_content: BinaryIO) -> BytesIO:
+    file = BytesIO(file_content)
+    file.seek(0)
+    ogg = AudioSegment.from_ogg(file)
+    mp3 = BytesIO()
+    ogg.export(mp3, format='mp3')
+    mp3.seek(0)
+    return mp3
+
+
+async def extract_text_from_voice(botnav: TeleBotNav, message: Message) -> str:
+    file_info = await botnav.bot.get_file(message.voice.file_id)
+    file_content = await botnav.bot.download_file(file_info.file_path)
+    file = await asyncio.to_thread(get_mp3_from_ogg, file_content)
+    file.name = 'voice.mp3'
+    text = await openai_instance.whisper_transcribe(file)
+    return text
+
 
 async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None:
+    if message.content_type not in ('text', 'voice'):
+        return
+
+    if message.content_type == 'voice':
+        text = await extract_text_from_voice(botnav, message)
+        await botnav.bot.send_message(message.chat.id, f'You said: "{text}"')
+
+    if message.content_type == 'text':
+        text = message.text
+
     get_or_create_conversation(botnav, message)
 
     openai_instance.chat_add_message(
         botnav.get_user(message).id,
         message.state_data['conversation_id'],
-        message.text
+        text
     )
     parts = []
 
@@ -182,6 +223,9 @@ async def start_dalle(botnav: TeleBotNav, message: Message) -> None:
 
 
 async def dalle_message_handler(botnav: TeleBotNav, message: Message) -> None:
+    if message.content_type != 'text':
+        return
+
     await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')
     url = await openai_instance.dalle_generate_image(message.text)
     await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')

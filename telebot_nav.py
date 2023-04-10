@@ -60,7 +60,8 @@ class TeleBotNav:
         )
 
         self.bot.register_callback_query_handler(self.callback_query_handler, func=lambda message: True)
-        self.bot.register_message_handler(self.message_handler)
+        self.bot.register_message_handler(self.message_handler, content_types=['audio', 'photo', 'voice', 'video', 'document',
+            'text', 'location', 'contact', 'sticker'])
 
     async def set_globl_default_handler(self, func: Callable) -> None:
         self.global_default_handler = func
@@ -106,7 +107,7 @@ class TeleBotNav:
 
         async with self.bot.retrieve_data(message.from_user.id, message.chat.id) as state_data:
             message.state_data = state_data
-            if message.text.startswith('/') and message.text[1:] in self.commands:
+            if message.content_type == 'text' and message.text.startswith('/') and message.text[1:] in self.commands:
                 await self.commands[message.text[1:]]['func'](self, message)
             elif state_data and 'next_handler' in state_data:
                 func = state_data.pop('next_handler')
