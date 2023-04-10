@@ -1,3 +1,4 @@
 telebot
 aiohttp
 openai
+pydub
