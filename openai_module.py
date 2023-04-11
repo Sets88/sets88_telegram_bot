@@ -5,7 +5,6 @@ from io import BytesIO
 import functools
 from random import randrange
 from time import time
-import logging
 from typing import BinaryIO
 
 import openai
@@ -14,6 +13,7 @@ from pydub import AudioSegment
 
 import config
 from telebot_nav import TeleBotNav
+from logger import logger
 
 
 openai.api_key = config.OPENAI_API_KEY
@@ -210,10 +210,11 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
     except Exception as exc:
         if getattr(exc, 'code', None) == 'context_length_exceeded':
             await botnav.bot.send_message(message.chat.id, getattr(exc, 'user_message', "Something went wrong, try again later"))
+            await chat_clean_conversation(botnav, message)
             return
 
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
-        logging.exception(exc)
+        logger.exception(exc)
         message.state_data.clear()
 
 

@@ -1,7 +1,6 @@
 import time
 import asyncio
 import functools
-import logging
 from typing import Optional
 from typing import Callable
 
@@ -15,6 +14,8 @@ from telebot.types import InlineKeyboardMarkup
 from telebot.types import InlineKeyboardButton
 from telebot.types import Message
 from telebot.types import User
+
+from logger import logger
 
 
 def throttle(delay: int):
@@ -84,7 +85,11 @@ class TeleBotNav:
         ])
 
     async def callback_query_handler(self, call: CallbackQuery) -> None:
-        logging.info(f"{self.get_user(call.message).username} pressed: {call.data}")
+        func_name = 'unknown'
+        if call.data in self.buttons:
+            func_name = self.buttons[call.data].__name__
+
+        logger.info(f"{call.from_user.username} pressed: {call.data}({func_name})")
 
         # To make data appear
         await self.bot.set_state(call.from_user.id, call.message.chat.id, '')
@@ -100,7 +105,7 @@ class TeleBotNav:
 
 
     async def message_handler(self, message: Message) -> None:
-        logging.info(f"{self.get_user(message).username} sent: {message.text}")
+        logger.info(f"{self.get_user(message).username} sent: {message.text}")
 
         # To make data appear
         await self.bot.set_state(message.from_user.id, message.chat.id, '')

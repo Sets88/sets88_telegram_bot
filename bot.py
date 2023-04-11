@@ -1,5 +1,4 @@
 import asyncio
-import logging
 
 from telebot import ExceptionHandler
 from telebot.types import Message
@@ -10,17 +9,16 @@ from config import TELEGRAM_TOKEN
 from config import ALLOWED_USER_NAMES
 import openai_module
 
-
-logging.basicConfig(level=logging.INFO)
+from logger import logger
 
 
 class ExceptionH(ExceptionHandler):
     def handle(self, exception: Exception):
-        logging.exception(exception)
+        logger.exception(exception)
 
 
 async def start(botnav: TeleBotNav, message: Message) -> None:
-    logging.info(f'{message.from_user.username} {message.chat.id}')
+    logger.info(f'{message.from_user.username} {message.chat.id}')
 
     if (botnav.get_user(message).username.lower() not in ALLOWED_USER_NAMES):
         return
