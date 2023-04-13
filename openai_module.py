@@ -126,7 +126,7 @@ class OpenAi():
                 params[key] = val
 
         gen = await openai.ChatCompletion.acreate(
-            model=params.get('model', DEFAULT_GPT_MODEL),
+            model= self.conversations[f'{user_id}_{conversation_id}'].get('model', DEFAULT_GPT_MODEL),
             messages=[
                 {"role": "system", "content": self.conversations[f'{user_id}_{conversation_id}']['init']},
                 *self.conversations[f'{user_id}_{conversation_id}']['messages'],
