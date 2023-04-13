@@ -87,7 +87,10 @@ class TeleBotNav:
     async def callback_query_handler(self, call: CallbackQuery) -> None:
         func_name = 'unknown'
         if call.data in self.buttons:
-            func_name = self.buttons[call.data].__name__
+            if hasattr(self.buttons[call.data], '__name__'):
+                func_name = self.buttons[call.data].__name__
+            else:
+                func_name = str(self.buttons[call.data])
 
         logger.info(f"{call.from_user.username} pressed: {call.data}({func_name})")
 

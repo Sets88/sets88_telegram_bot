@@ -30,6 +30,12 @@ OPENAI_OPTIONS = dict(
   presence_penalty=0.0
 )
 
+DEFAULT_GPT_MODEL = 'gpt-3.5-turbo'
+
+AVAILABLE_GPT_MODELS = [
+    'gpt-3.5-turbo', 'gpt-4'
+]
+
 CHAT_ROLES = {
     'Funnyman': {
         'init': 'As a helpful assistant, I will answer your questions as concisely as possible, with a touch of humor to make it more enjoyable.'
@@ -71,8 +77,7 @@ CHAT_ROLES = {
 
 
 class OpenAi():
-    def __init__(self, model: str = 'gpt-3.5-turbo') -> None:
-        self.model = model
+    def __init__(self) -> None:
         self.conversations = {}
 
     def chat_load_converstation(self, user_id: int, conversation_id: str) -> None:
@@ -85,6 +90,7 @@ class OpenAi():
         self.conversations[f'{user_id}_{new_conversation_id}'] = {
             'init': 'Assistant is an intelligent chatbot designed to help users answer questions is the main goal of the Assistant.',
             'one_off': False,
+            'model': DEFAULT_GPT_MODEL,
             'messages': []
         }
         self.chat_save_conversation(user_id, new_conversation_id)
@@ -120,7 +126,7 @@ class OpenAi():
                 params[key] = val
 
         gen = await openai.ChatCompletion.acreate(
-            model=self.model,
+            model=params.get('model', DEFAULT_GPT_MODEL),
             messages=[
                 {"role": "system", "content": self.conversations[f'{user_id}_{conversation_id}']['init']},
                 *self.conversations[f'{user_id}_{conversation_id}']['messages'],
@@ -251,6 +257,22 @@ async def chat_set_role(role: str, botnav: TeleBotNav, message: Message) -> None
     await botnav.bot.send_message(message.chat.id, "Init was set to: " + CHAT_ROLES[role]['init'])
 
 
+async def chat_set_model(model: str, botnav: TeleBotNav, message: Message) -> None:
+    if model not in AVAILABLE_GPT_MODELS:
+        return
+
+    await botnav.bot.delete_message(message.chat.id, message.message_id)
+
+    openai_instance.chat_set_options(
+        message.chat.id,
+        get_or_create_conversation(botnav, message),
+        model=model
+    )
+
+    await botnav.bot.send_message(message.chat.id, "Model was set to: " + model)
+
+
+
 async def chat_set_temparature(botnav: TeleBotNav, message: Message) -> None:
     await botnav.bot.send_message(message.chat.id, "Temperature was set to: " + message.text)
 
@@ -283,6 +305,17 @@ async def chat_choose_role(botnav: TeleBotNav, message: Message) -> None:
         message.chat.id,
         {
             x: functools.partial(chat_set_role, x) for x in CHAT_ROLES.keys()
+        },
+        message_to_rewrite=message,
+        row_width=2,
+    )
+
+
+async def chat_models_list(botnav: TeleBotNav, message: Message) -> str:
+    await botnav.print_buttons(
+        message.chat.id,
+        {
+            x: functools.partial(chat_set_model, x) for x in AVAILABLE_GPT_MODELS
         },
         message_to_rewrite=message,
         row_width=2,
@@ -334,6 +367,7 @@ async def chat_options(botnav: TeleBotNav, message: Message) -> None:
             'Temperature': chat_temperature,
             'Set init': chat_set_init_request,
             'Clean conversation': chat_clean_conversation,
+            'Choose Model': chat_models_list,
         },
         message_to_rewrite=message,
         row_width=2
