@@ -353,7 +353,7 @@ async def chat_clean_conversation(botnav: TeleBotNav, message: Message) -> None:
     openai_instance.chat_set_options(
         message.chat.id,
         get_or_create_conversation(botnav, message),
-        message=[]
+        messages=[]
     )
 
     await botnav.bot.edit_message_text("Conversation was reset", message.chat.id, message.message_id)
