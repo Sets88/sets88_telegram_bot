@@ -86,7 +86,7 @@ async def download_file(url):
 
 async def send_sending_action(botnav, message, model):
     if model['output_type'] == 'photo':
-        await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')
+        await botnav.send_chat_action(message.chat.id, 'upload_photo')
     if model['output_type'] == 'text':
         await botnav.send_chat_action(message.chat.id, 'typing')
     if model['output_type'] == 'file':
