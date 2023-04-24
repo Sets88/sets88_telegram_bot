@@ -2,3 +2,4 @@ telebot
 aiohttp
 openai
 pydub
+replicate

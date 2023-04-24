@@ -7,8 +7,10 @@ from telebot.asyncio_storage import StateMemoryStorage
 from telebot_nav import TeleBotNav
 from config import TELEGRAM_TOKEN
 from config import ALLOWED_USER_NAMES
-import openai_module
 
+import config
+import openai_module
+import replicate_module
 from logger import logger
 
 
@@ -28,6 +30,7 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
         {
             'Chat GPT': openai_module.start_chat_gpt,
             'Dall-E': openai_module.start_dalle,
+            'Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
         }, 'Choose'
     )
     await botnav.send_commands()
