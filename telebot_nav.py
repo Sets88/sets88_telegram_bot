@@ -139,7 +139,7 @@ class TeleBotNav:
         for x, y in buttons.items():
             self.buttons[str(y.__hash__())] = y
 
-        markup.add(*[InlineKeyboardButton(x, callback_data=f'{y.__hash__()}') for x, y in buttons.items()])
+        markup.add(*[InlineKeyboardButton(x, callback_data=f'{y.__hash__()}') for x, y in buttons.items() if y])
         if message_to_rewrite:
             await self.bot.edit_message_reply_markup(
                 chat_id=chat_id,
