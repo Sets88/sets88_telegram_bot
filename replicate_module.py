@@ -19,7 +19,7 @@ if config.REPLICATE_API_KEY:
 REPLICATE_MODELS = {
     'stable-diffusion': {
         'replicate_id': 'stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf',
-        'description': 'Stable Diffusion is a GAN-based image super-resolution model trained on real-world images. It can be used to upscale images to 4x the original resolution.',
+        'description': 'A latent text-to-image diffusion model capable of generating photo-realistic images given any text input',
         'input_type': 'text',
         'output_type': 'photo'
     },

@@ -225,7 +225,12 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
     try:
         async for reply in openai_instance.chat_get_reply(message.from_user.id, message.state_data['conversation_id']):
             await botnav.send_chat_action(message.chat.id, 'typing')
+
             parts.append(reply)
+
+            if len(parts) > 500:
+                await botnav.bot.send_message(message.chat.id, "".join(parts))
+                parts = []
         await botnav.bot.send_message(message.chat.id, "".join(parts))
     except Exception as exc:
         if getattr(exc, 'code', None) == 'context_length_exceeded':
@@ -247,10 +252,14 @@ async def dalle_message_handler(botnav: TeleBotNav, message: Message) -> None:
     if message.content_type != 'text':
         return
 
-    await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')
-    url = await openai_instance.dalle_generate_image(message.text)
-    await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')
-    await botnav.bot.send_photo(message.chat.id, url)
+    try:
+        await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')
+        url = await openai_instance.dalle_generate_image(message.text)
+        await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')
+        await botnav.bot.send_photo(message.chat.id, url)
+    except Exception as exc:
+        await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
+        logger.exception(exc)
 
 
 def get_or_create_conversation(botnav: TeleBotNav, message: Message) -> str:
