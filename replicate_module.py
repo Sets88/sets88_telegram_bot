@@ -103,12 +103,29 @@ REPLICATE_MODELS = {
         'replicate_id': 'prompthero/openjourney:9936c2001faa2194a261c01381f90e65261879985476014a0a37a334593a05eb',
         'input_type': 'text',
         'output_type': 'photo'
+    },
+    'styleclip': {
+        'description': 'StyleCLIP, Text-Driven Manipulation of StyleGAN Imagery',
+        'replicate_id': 'orpatashnik/styleclip:7af9a66f36f97fee2fece7dcc927551a951f0022cbdd23747b9212f23fc17021',
+        'input_type': 'photo',
+        'input_field': 'input',
+        'output_type': 'photo',
+        'available_params': {
+            'neutral': {
+                'type': 'str',
+                'description': 'Neutral image description'
+            },
+            'target': {
+                'type': 'str',
+                'description': 'Target image description'
+            },
+        }
     }
 }
 
 
 def replicate_execute(replicate_id: str, input_data: dict):
-    logger.info(json.dumps(input_data))
+    logger.info(input_data)
     output = replicate.run(
         replicate_id,
         input=input_data
@@ -281,7 +298,7 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
     if message.content_type == 'photo':
         file_info = await botnav.bot.get_file(message.photo[-1].file_id)
         file_content = await botnav.bot.download_file(file_info.file_path)
-        input_data['image'] = BytesIO(file_content)
+        input_data[replicate_model.get('input_field', 'image')] = BytesIO(file_content)
 
     try:
         result = await await_response(
