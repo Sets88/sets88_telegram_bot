@@ -28,8 +28,8 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
     await botnav.print_buttons(
         message.chat.id,
         {
-            'Chat GPT': openai_module.start_chat_gpt,
-            'Dall-E': openai_module.start_dalle,
+            'Chat GPT': openai_module.start_chat_gpt if config.OPENAI_API_KEY else None,
+            'Dall-E': openai_module.start_dalle if config.OPENAI_API_KEY else None,
             'Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
         }, 'Choose'
     )

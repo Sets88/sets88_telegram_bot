@@ -10,7 +10,6 @@ from typing import BinaryIO
 import openai
 from telebot.types import Message
 from pydub import AudioSegment
-import replicate
 
 import config
 from telebot_nav import TeleBotNav

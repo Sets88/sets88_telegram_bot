@@ -13,7 +13,7 @@ if not os.path.exists(CONFIG_PATH):
 configdata = json.load(open(CONFIG_PATH, 'r'))
 
 ALLOWED_USER_NAMES = configdata['ALLOWED_USER_NAMES']
-OPENAI_API_KEY = configdata['OPENAI_API_KEY']
+OPENAI_API_KEY = configdata.get('OPENAI_API_KEY', None)
 
 TELEGRAM_TOKEN = configdata['TELEGRAM_TOKEN']
 
