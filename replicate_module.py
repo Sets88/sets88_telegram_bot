@@ -19,7 +19,7 @@ if config.REPLICATE_API_KEY:
 REPLICATE_MODELS = {
     'stable-diffusion': {
         'replicate_id': 'stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf',
-        'description': 'A latent text-to-image diffusion model capable of generating photo-realistic images given any text input',
+        'description': 'Stable Diffusion, a latent text-to-image diffusion model capable of generating photo-realistic images given any text input',
         'input_type': 'text',
         'output_type': 'photo'
     },
@@ -30,25 +30,25 @@ REPLICATE_MODELS = {
         'output_type': 'file'
     },
     'kandinsky': {
-        'description': 'text2img model trained on LAION HighRes and fine-tuned on internal datasets',
+        'description': 'Kandinsky 2.1, text2img model trained on LAION HighRes and fine-tuned on internal datasets',
         'replicate_id': 'ai-forever/kandinsky-2:601eea49d49003e6ea75a11527209c4f510a93e2112c969d548fbb45b9c4f19f',
         'input_type': 'text',
         'output_type': 'photo'
     },
     'dolly': {
-        'description': 'An open source instruction-tuned large language model developed by Databricks',
+        'description': 'Dolly, an open source instruction-tuned large language model developed by Databricks',
         'replicate_id': 'replicate/dolly-v2-12b:ef0e1aefc61f8e096ebe4db6b2bacc297daf2ef6899f0f7e001ec445893500e5',
         'input_type': 'text',
         'output_type': 'text'
     },
     'blip': {
-        'description': 'Bootstrapping Language-Image Pre-training, send photo to get caption',
+        'description': 'Blip, bootstrapping Language-Image Pre-training, send photo to get caption',
         'replicate_id': 'salesforce/blip:2e1dddc8621f72155f24cf2e0adbde548458d3cab9f00c0139eea840d0ac4746',
         'input_type': 'photo',
         'output_type': 'text'
     },
     'openjourney': {
-        'description': 'Stable Diffusion fine tuned on Midjourney v4 images.',
+        'description': 'OpenJourney, Stable Diffusion fine tuned on Midjourney v4 images.',
         'replicate_id': 'prompthero/openjourney:9936c2001faa2194a261c01381f90e65261879985476014a0a37a334593a05eb',
         'input_type': 'text',
         'output_type': 'photo'
