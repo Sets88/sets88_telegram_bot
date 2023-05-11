@@ -11,6 +11,7 @@ from config import ALLOWED_USER_NAMES
 import config
 import openai_module
 import replicate_module
+import youtube_dl_module
 from logger import logger
 
 
@@ -33,6 +34,7 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
             'Chat GPT': openai_module.start_chat_gpt if config.OPENAI_API_KEY else None,
             'Dall-E': openai_module.start_dalle if config.OPENAI_API_KEY else None,
             'Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
+            'Youtube-DL': youtube_dl_module.start_youtube_dl,
         }, 'Choose'
     )
     await botnav.send_commands()

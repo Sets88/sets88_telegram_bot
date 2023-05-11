@@ -3,3 +3,4 @@ aiohttp
 openai
 pydub
 replicate
+yt_dlp
