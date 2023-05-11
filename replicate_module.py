@@ -260,21 +260,13 @@ async def download_file(url: str):
             return file
 
 
-async def send_sending_action(botnav, message, model):
+def get_await_action_type(model):
     if model['output_type'] == 'photo':
-        await botnav.send_chat_action(message.chat.id, 'upload_photo')
+        return 'upload_photo'
     if model['output_type'] == 'text':
-        await botnav.send_chat_action(message.chat.id, 'typing')
+        return 'typing'
     if model['output_type'] == 'file':
-        await botnav.send_chat_action(message.chat.id, 'upload_document')
-
-
-async def await_response(botnav: TeleBotNav, message: Message, model, coro: asyncio.coroutine):
-    task = asyncio.create_task(coro)
-    while not task.done():
-        await asyncio.sleep(0.1)
-        await send_sending_action(botnav, message, model)
-    return await task
+        return 'upload_document'
 
 
 async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> None:
@@ -301,11 +293,10 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
         input_data[replicate_model.get('input_field', 'image')] = BytesIO(file_content)
 
     try:
-        result = await await_response(
-            botnav,
-            message,
-            replicate_model,
-            asyncio.to_thread(replicate_execute, replicate_model['replicate_id'], input_data)
+        result = await botnav.await_coro_sending_action(
+            message.chat.id,
+            asyncio.to_thread(replicate_execute, replicate_model['replicate_id'], input_data),
+            get_await_action_type(replicate_model)
         )
 
         if replicate_model['output_type'] == 'photo':

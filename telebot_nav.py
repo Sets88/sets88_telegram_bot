@@ -153,6 +153,15 @@ class TeleBotNav:
     async def send_chat_action(self, chat_id: int, action: str) -> None:
         await self.bot.send_chat_action(chat_id, action)
 
+    async def await_coro_sending_action(self, chat_id: int, coro, action: str = 'typing') -> None:
+        task = asyncio.create_task(coro)
+
+        while not task.done():
+            await asyncio.sleep(0.1)
+            await self.send_chat_action(chat_id, action)
+
+        return await task
+
     def get_user(self, message: Message) -> User:
         if hasattr(message ,'user'):
             return message.user
