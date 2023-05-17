@@ -138,12 +138,17 @@ class OpenAi():
             if key in params:
                 params[key] = val
 
+        messages = [
+            *self.conversations[f'{user_id}_{conversation_id}']['messages'][0:-1],
+            {"role": "system", "content": self.conversations[f'{user_id}_{conversation_id}']['init']},
+            *self.conversations[f'{user_id}_{conversation_id}']['messages'][-1:]
+        ]
+
+        print(messages)
+
         gen = await openai.ChatCompletion.acreate(
             model= self.conversations[f'{user_id}_{conversation_id}'].get('model', DEFAULT_GPT_MODEL),
-            messages=[
-                {"role": "system", "content": self.conversations[f'{user_id}_{conversation_id}']['init']},
-                *self.conversations[f'{user_id}_{conversation_id}']['messages'],
-            ],
+            messages=messages,
             stream=True,
             **params
         )
