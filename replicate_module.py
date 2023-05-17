@@ -302,14 +302,22 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
         if replicate_model['output_type'] == 'photo':
             if isinstance(result, list):
                 for photo in result:
-                    await botnav.bot.send_photo(message.chat.id, photo)
+                    await botnav.await_coro_sending_action(
+                        message.chat.id,
+                        botnav.bot.send_photo(message.chat.id, photo),
+                        'upload_photo'
+                    )
             elif isinstance(result, str):
-                await botnav.bot.send_photo(message.chat.id, result)
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_photo(message.chat.id, result),
+                    'upload_photo'
+                )
 
         if replicate_model['output_type'] == 'text':
             parts = []
             for part in result:
-                await send_sending_action(botnav, message, replicate_model)
+                await botnav.send_chat_action(message.chat.id, 'typing')
                 parts.append(part)
 
                 if len(parts) > 500:
@@ -320,11 +328,29 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
         if replicate_model['output_type'] == 'file':
             if isinstance(result, list):
                 for document_url in result:
-                    document = await download_file(document_url)
-                    await botnav.bot.send_document(message.chat.id, document)
+                    document = botnav.await_coro_sending_action(
+                        message.chat.id,
+                        download_file(document_url),
+                        'upload_document'
+                    )
+
+                    await botnav.await_coro_sending_action(
+                        message.chat.id,
+                        botnav.bot.send_document(message.chat.id, document, timeout=120),
+                        'upload_document'
+                    )
             elif isinstance(result, str):
-                document = await download_file(result)
-                await botnav.bot.send_document(message.chat.id, document)
+                    document = await botnav.await_coro_sending_action(
+                        message.chat.id,
+                        download_file(result),
+                        'upload_document'
+                    )
+
+                    await botnav.await_coro_sending_action(
+                        message.chat.id,
+                        botnav.bot.send_document(message.chat.id, document, timeout=120),
+                        'upload_document'
+                    )
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
         logger.exception(exc)
