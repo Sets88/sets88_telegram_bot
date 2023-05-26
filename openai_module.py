@@ -242,8 +242,9 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
                 await botnav.bot.send_message(message.chat.id, "".join(parts))
                 parts = []
         await botnav.bot.send_message(message.chat.id, "".join(parts))
-    except openai.error.RateLimitError:
+    except openai.error.RateLimitError as exc:
         await botnav.bot.send_message(message.chat.id, 'OpenAi servers are overloaded, try again later')
+        logger.exception(exc)
     except Exception as exc:
         if getattr(exc, 'code', None) == 'context_length_exceeded':
             await botnav.bot.send_message(message.chat.id, getattr(exc, 'user_message', "Something went wrong, try again later"))
