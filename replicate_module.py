@@ -120,6 +120,58 @@ REPLICATE_MODELS = {
                 'description': 'Target image description'
             },
         }
+    },
+    'controlnet-scrible': {
+        'description': 'ControlNet, generate detailed images from scribbled drawings',
+        'replicate_id': 'jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117',
+        'input_type': 'text',
+        'input_field': 'prompt',
+        'output_type': 'photo',
+        'available_params': {
+            'image': {
+                'type': 'photo',
+                'description': 'Mask image'
+            },
+        }
+    },
+    'controlnet-hough': {
+        'description': 'ControlNet, modify images using M-LSD line detection',
+        'replicate_id': 'jagilley/controlnet-hough:854e8727697a057c525cdb45ab037f64ecca770a1769cc52287c2e56472a247b',
+        'input_type': 'text',
+        'input_field': 'prompt',
+        'output_type': 'photo',
+        'available_params': {
+            'image': {
+                'type': 'photo',
+                'description': 'Input image'
+            },
+        }
+    },
+    'controlnet-hed': {
+        'description': 'ControlNet, modify images using HED maps',
+        'replicate_id': 'jagilley/controlnet-hed:cde353130c86f37d0af4060cd757ab3009cac68eb58df216768f907f0d0a0653',
+        'input_type': 'text',
+        'input_field': 'prompt',
+        'output_type': 'photo',
+        'available_params': {
+            'input_image': {
+                'type': 'photo',
+                'description': 'Input image'
+            },
+        }
+    },
+    'controlnet-normal': {
+        'description': 'ControlNet, modify images using normal maps',
+        'replicate_id': 'jagilley/controlnet-normal:cc8066f617b6c99fdb134bc1195c5291cf2610875da4985a39de50ee1f46d81c',
+        'input_type': 'text',
+        'input_field': 'prompt',
+        'output_type': 'photo',
+        'available_params': {
+            'image': {
+                'type': 'photo',
+                'description': 'Input image'
+            },
+        }
     }
 }
 
@@ -146,6 +198,11 @@ async def replicate_set_input_param(param_name: str, botnav: TeleBotNav, message
 
     if param['type'] == 'int':
         value = int(value)
+
+    if param['type'] == 'photo':
+        file_info = await botnav.bot.get_file(message.photo[-1].file_id)
+        file_content = await botnav.bot.download_file(file_info.file_path)
+        value = BytesIO(file_content)
 
     message.state_data['replicate_params'][param_name] = value
     await botnav.bot.send_message(message.chat.id, f"Param {param_name} was set to: {value}")
@@ -187,6 +244,15 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
             text += f"({param['description']}) "
         if param.get('default'):
             text += f"or leave empty for default value ({param['default']})"
+
+        await botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
+        await botnav.bot.send_message(message.chat.id, text)
+        return
+
+    if param['type'] == 'photo':
+        text = "Please send photo"
+        if param.get('description'):
+            text += f"({param['description']}) "
 
         await botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
         await botnav.bot.send_message(message.chat.id, text)
