@@ -64,7 +64,7 @@ class TeleBotNav:
         self.bot.register_message_handler(self.message_handler, content_types=['audio', 'photo', 'voice', 'video', 'document',
             'text', 'location', 'contact', 'sticker'])
 
-    async def set_globl_default_handler(self, func: Callable) -> None:
+    async def set_global_default_handler(self, func: Callable) -> None:
         self.global_default_handler = func
 
     async def set_default_handler(self, message: Message, func: Callable) -> None:
@@ -105,7 +105,6 @@ class TeleBotNav:
             elif self.global_default_handler:
                 await self.bot.set_state(call.message.chat.id, '')
                 await self.global_default_handler(self, call.message)
-
 
     async def message_handler(self, message: Message) -> None:
         logger.info(f"{self.get_user(message).username} sent: {message.text}")

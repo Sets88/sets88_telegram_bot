@@ -35,7 +35,7 @@ async def youtube_dl_message_handler(botnav: TeleBotNav, message: Message) -> No
         try:
             await botnav.await_coro_sending_action(
                 message.chat.id,
-                botnav.bot.send_video(message.chat.id, open(filename, 'rb')),
+                botnav.bot.send_video(message.chat.id, open(filename, 'rb'), supports_streaming=True),
                 'upload_video'
             )
         finally:
