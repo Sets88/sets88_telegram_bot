@@ -23,7 +23,7 @@ class ExceptionH(ExceptionHandler):
 async def start(botnav: TeleBotNav, message: Message) -> None:
     logger.info(f'{message.from_user.username} {message.chat.id}')
 
-    if (botnav.get_user(message).username.lower() not in ALLOWED_USER_NAMES):
+    if (ALLOWED_USER_NAMES and botnav.get_user(message).username.lower() not in ALLOWED_USER_NAMES):
         logger.info(f'{message.from_user.username} {message.chat.id} not allowed')
         await botnav.bot.send_message(message.chat.id, "Build your own bot here is a source code: https://github.com/Sets88/sets88_telegram_bot")
         return
@@ -33,16 +33,18 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
         {
             'Chat GPT': openai_module.start_chat_gpt if config.OPENAI_API_KEY else None,
             'Dall-E': openai_module.start_dalle if config.OPENAI_API_KEY else None,
+            'Whisper': openai_module.start_whisper if config.OPENAI_API_KEY else None,
             'Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
             'Youtube-DL': youtube_dl_module.start_youtube_dl,
-        }, 'Choose'
+        }, 'Choose',
+        row_width=2
     )
     await botnav.send_commands()
 
 
 async def main() -> None:
     await botnav.set_command('start', 'Start the bot', start)
-    await botnav.set_globl_default_handler(start)
+    await botnav.set_global_default_handler(start)
     await botnav.bot.polling()
 
 

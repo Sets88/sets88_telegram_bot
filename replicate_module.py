@@ -172,7 +172,27 @@ REPLICATE_MODELS = {
                 'description': 'Input image'
             },
         }
+    },
+    'img2prompt': {
+        'description': 'Get an approximate text prompt, with style, matching an image. (Optimized for stable-diffusion (clip ViT-L/14))',
+        'replicate_id': 'methexis-inc/img2prompt:50adaf2d3ad20a6f911a8a9e3ccf777b263b8596fbd2c8fc26e8888f8a0edbb5',
+        'input_type': 'photo',
+        'output_type': 'text'
+    },
+    'instructblip-vicuna13b': {
+        'description': 'An instruction-tuned multi-modal model based on BLIP-2 and Vicuna-13B',
+        'replicate_id': 'joehoover/instructblip-vicuna13b:c4c54e3c8c97cd50c2d2fec9be3b6065563ccf7d43787fb99f84151b867178fe',
+        'input_type': 'text',
+        'input_field': 'prompt',
+        'output_type': 'text',
+        'available_params': {
+            'img': {
+                'type': 'photo',
+                'description': 'Input image'
+            },
+        }
     }
+
 }
 
 

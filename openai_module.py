@@ -215,7 +215,12 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
         return
 
     if message.content_type == 'voice':
-        text = await extract_text_from_voice(botnav, message)
+        text = await botnav.await_coro_sending_action(
+            message.chat.id,
+            extract_text_from_voice(botnav, message),
+            'typing'
+        )
+
         await botnav.bot.send_message(message.chat.id, f'You said: "{text}"')
 
     if message.content_type == 'text':
@@ -256,6 +261,27 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
         message.state_data.clear()
 
 
+async def start_whisper(botnav: TeleBotNav, message: Message) -> None:
+    await botnav.bot.send_message(message.chat.id, 'Welcome to Whisper, send me voice message to transcribe!')
+    await botnav.set_default_handler(message, whisper_message_handler)
+
+
+async def whisper_message_handler(botnav: TeleBotNav, message: Message) -> None:
+    if message.content_type != 'voice':
+        return
+
+    try:
+        text = await botnav.await_coro_sending_action(
+            message.chat.id,
+            extract_text_from_voice(botnav, message),
+            'typing'
+        )
+        await botnav.bot.send_message(message.chat.id, text)
+    except Exception as exc:
+        await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
+        logger.exception(exc)
+
+
 async def start_dalle(botnav: TeleBotNav, message: Message) -> None:
     await botnav.bot.send_message(message.chat.id, 'Welcome to DALL-E, ask me to draw something!')
     await botnav.set_default_handler(message, dalle_message_handler)
@@ -266,9 +292,12 @@ async def dalle_message_handler(botnav: TeleBotNav, message: Message) -> None:
         return
 
     try:
-        await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')
-        url = await openai_instance.dalle_generate_image(message.text)
-        await botnav.bot.send_chat_action(message.chat.id, 'upload_photo')
+        url = await botnav.await_coro_sending_action(
+            message.chat.id,
+            openai_instance.dalle_generate_image(message.text),
+            'upload_photo'
+        )
+
         await botnav.bot.send_photo(message.chat.id, url)
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
