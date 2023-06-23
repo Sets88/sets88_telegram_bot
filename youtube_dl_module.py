@@ -58,11 +58,18 @@ async def youtube_dl_message_handler(botnav: TeleBotNav, message: Message) -> No
                     botnav.bot.send_audio(message.chat.id, open(filename, 'rb')),
                     'upload_audio'
                 )
-            await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_video(message.chat.id, open(filename, 'rb'), supports_streaming=True),
-                'upload_video'
-            )
+            elif ext == 'mp4':
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_video(message.chat.id, open(filename, 'rb'), supports_streaming=True),
+                    'upload_video'
+                )
+            else:
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_document(message.chat.id, open(filename, 'rb'), timeout=120),
+                    'upload_document'
+                )
         finally:
             os.unlink(filename)
     except Exception as exc:
