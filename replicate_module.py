@@ -98,6 +98,27 @@ REPLICATE_MODELS = {
             },
         }
     },
+    'blip-2': {
+        'description': 'Blip, bootstrapping Language-Image Pre-training, send photo to get caption or ask question',
+        'replicate_id': 'andreasjansson/blip-2:4b32258c42e9efd4288bb9910bc532a69727f9acd26aa08e175713a0a857a608',
+        'input_type': 'photo',
+        'input_field': 'image',
+        'output_type': 'text',
+        'available_params': {
+            'question': {
+                'type': 'str',
+                'description': 'Question for VQA, default is "What is this a picture of?"',
+                'default': 'What is this a picture of?'
+            },
+            'temperature': {
+                'type': 'float',
+                'description': 'Temperature for use with nucleus sampling (minimum: 0.5; maximum: 1) default is 1',
+                'default': 1,
+                'min': 0.5,
+                'max': 1,
+            }
+        }
+    },
     'openjourney': {
         'description': 'OpenJourney, Stable Diffusion fine tuned on Midjourney v4 images.',
         'replicate_id': 'prompthero/openjourney:9936c2001faa2194a261c01381f90e65261879985476014a0a37a334593a05eb',
@@ -219,6 +240,9 @@ async def replicate_set_input_param(param_name: str, botnav: TeleBotNav, message
     if param['type'] == 'int':
         value = int(value)
 
+    if param['type'] == 'float':
+        value = float(value)
+
     if param['type'] == 'photo':
         file_info = await botnav.bot.get_file(message.photo[-1].file_id)
         file_content = await botnav.bot.download_file(file_info.file_path)
@@ -244,6 +268,21 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
     await botnav.bot.delete_message(message.chat.id, message.message_id)
 
     if param['type'] == 'int':
+        text = "Please enter integer value "
+        if param.get('description'):
+            text += f"({param['description']}) "
+        if param.get('min'):
+            text += f"greater than {param['min']} "
+        if param.get('max'):
+            text += f"less than {param['max']} "
+        if param.get('default'):
+            text += f"or leave empty for default value ({param['default']})"
+
+        await botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
+        await botnav.bot.send_message(message.chat.id, text)
+        return
+
+    if param['type'] == 'float':
         text = "Please enter integer value "
         if param.get('description'):
             text += f"({param['description']}) "
