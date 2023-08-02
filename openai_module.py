@@ -33,7 +33,7 @@ OPENAI_OPTIONS = dict(
 DEFAULT_GPT_MODEL = 'gpt-3.5-turbo'
 
 AVAILABLE_GPT_MODELS = [
-    'gpt-3.5-turbo', 'gpt-4'
+    'gpt-3.5-turbo', 'gpt-4', 'gpt-3.5-turbo-16k'
 ]
 
 CHAT_ROLES = {
@@ -210,22 +210,7 @@ async def extract_text_from_voice(botnav: TeleBotNav, message: Message) -> str:
     return text
 
 
-async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None:
-    if message.content_type not in ('text', 'voice'):
-        return
-
-    if message.content_type == 'voice':
-        text = await botnav.await_coro_sending_action(
-            message.chat.id,
-            extract_text_from_voice(botnav, message),
-            'typing'
-        )
-
-        await botnav.bot.send_message(message.chat.id, f'You said: "{text}"')
-
-    if message.content_type == 'text':
-        text = message.text
-
+async def chat_gpt_handle_text_message(botnav: TeleBotNav, message: Message, text: str) -> None:
     get_or_create_conversation(botnav, message)
 
     openai_instance.chat_add_message(
@@ -238,7 +223,7 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
     await botnav.send_chat_action(message.chat.id, 'typing')
 
     try:
-        async for reply in openai_instance.chat_get_reply(message.from_user.id, message.state_data['conversation_id']):
+        async for reply in openai_instance.chat_get_reply(botnav.get_user(message).id, message.state_data['conversation_id']):
             await botnav.send_chat_action(message.chat.id, 'typing')
 
             parts.append(reply)
@@ -259,6 +244,25 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
         logger.exception(exc)
         message.state_data.clear()
+
+
+async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None:
+    if message.content_type not in ('text', 'voice'):
+        return
+
+    if message.content_type == 'voice':
+        text = await botnav.await_coro_sending_action(
+            message.chat.id,
+            extract_text_from_voice(botnav, message),
+            'typing'
+        )
+
+        await botnav.bot.send_message(message.chat.id, f'You said: "{text}"')
+
+    if message.content_type == 'text':
+        text = message.text
+
+    await chat_gpt_handle_text_message(botnav, message, text)
 
 
 async def start_whisper(botnav: TeleBotNav, message: Message) -> None:
@@ -337,6 +341,15 @@ async def chat_set_model(model: str, botnav: TeleBotNav, message: Message) -> No
     await botnav.bot.send_message(message.chat.id, "Model was set to: " + model)
 
 
+async def chat_set_max_tokens(botnav: TeleBotNav, message: Message) -> None:
+    await botnav.bot.send_message(message.chat.id, "Max tokens was set to: " + message.text)
+
+    openai_instance.chat_set_options(
+        message.chat.id,
+        get_or_create_conversation(botnav, message),
+        max_tokens=int(message.text)
+    )
+
 
 async def chat_set_temparature(botnav: TeleBotNav, message: Message) -> None:
     await botnav.bot.send_message(message.chat.id, "Temperature was set to: " + message.text)
@@ -346,6 +359,27 @@ async def chat_set_temparature(botnav: TeleBotNav, message: Message) -> None:
         get_or_create_conversation(botnav, message),
         temperature=float(message.text)
     )
+
+
+async def chat_delayed_send_message(botnav: TeleBotNav, message: Message) -> None:
+    text = message.state_data.pop('pending_message')
+    await chat_gpt_handle_text_message(botnav, message, text)
+
+
+async def chat_delayed_collect_message(botnav: TeleBotNav, message: Message) -> None:
+    if 'pending_message' not in message.state_data:
+        message.state_data['pending_message'] = message.text
+    else:
+        message.state_data['pending_message'] = message.state_data['pending_message'] + '\n' + message.text
+
+    await botnav.print_buttons(
+        message.chat.id,
+        {
+            'Send': chat_delayed_send_message
+        },
+        'Press to send'
+    )
+    await botnav.set_next_handler(message, chat_delayed_collect_message)
 
 
 async def chat_set_init(botnav: TeleBotNav, message: Message) -> None:
@@ -387,6 +421,11 @@ async def chat_models_list(botnav: TeleBotNav, message: Message) -> str:
     )
 
 
+async def chat_delayed_message(botnav: TeleBotNav, message: Message) -> None:
+    await botnav.bot.send_message(message.chat.id, "Enter text of your request, after finish push send button")
+    await botnav.set_next_handler(message, chat_delayed_collect_message)
+
+
 async def chat_one_off(botnav: TeleBotNav, message: Message) -> None:
     openai_instance.chat_set_options(
         message.chat.id,
@@ -405,6 +444,13 @@ async def chat_one_off(botnav: TeleBotNav, message: Message) -> None:
 async def chat_set_init_request(botnav: TeleBotNav, message: Message) -> None:
     await botnav.bot.edit_message_text("Set the description of your opponent", message.chat.id, message.message_id)
     await botnav.set_next_handler(message, chat_set_init)
+
+
+async def chat_max_tokens(botnav: TeleBotNav, message: Message) -> None:
+    await botnav.bot.edit_message_text("Set maximum tokens in response"
+                                " randomnes in its responses)", message.chat.id, message.message_id)
+
+    await botnav.set_next_handler(message, chat_set_max_tokens)
 
 
 async def chat_temperature(botnav: TeleBotNav, message: Message) -> None:
@@ -429,7 +475,9 @@ async def chat_options(botnav: TeleBotNav, message: Message) -> None:
         message.chat.id,
         {
             'One Off': chat_one_off,
+            'Send on command': chat_delayed_message,
             'Temperature': chat_temperature,
+            'Max tokens': chat_max_tokens,
             'Set init': chat_set_init_request,
             'Clean conversation': chat_clean_conversation,
             'Choose Model': chat_models_list,
