@@ -75,11 +75,31 @@ REPLICATE_MODELS = {
             },
         }
     },
-    'dolly': {
-        'description': 'Dolly, an open source instruction-tuned large language model developed by Databricks',
-        'replicate_id': 'replicate/dolly-v2-12b:ef0e1aefc61f8e096ebe4db6b2bacc297daf2ef6899f0f7e001ec445893500e5',
+    'llama-2-70b': {
+        'description': 'A 70 billion parameter language model from Meta, fine tuned for chat completions',
+        'replicate_id': 'meta/llama-2-70b-chat:02e509c789964a7ea8736978a43525956ef40397be9033abf9fd2badfe68c9e3',
+        'input_field': 'prompt',
         'input_type': 'text',
-        'output_type': 'text'
+        'output_type': 'text',
+        'available_params': {
+            'temperature': {
+                'type': 'float',
+                'description': 'Adjusts randomness of outputs, greater than 1 is random and 0 is deterministic, 0.75',
+                'default': 1,
+                'min': 0.5,
+                'max': 1,
+            },
+            'max_new_tokens': {
+                'type': 'int',
+                'default': 1024,
+                'description': 'Minimum number of tokens to generate. To disable, set to -1. A word is generally 2-3 tokens'
+            },
+            'system_prompt': {
+                'type': 'str',
+                'default': 'You are a helpful assistant',
+                'description': 'System prompt to send to the model. This is prepended to the prompt and helps guide system behavior'
+            }
+        }
     },
     'blip': {
         'description': 'Blip, bootstrapping Language-Image Pre-training, send photo to get caption',
@@ -125,6 +145,22 @@ REPLICATE_MODELS = {
         'input_type': 'text',
         'output_type': 'photo'
     },
+    'latent-consistency-model':  {
+        'description': 'Synthesizing High-Resolution Images with Few-Step Inference',
+        'replicate_id': 'luosiallen/latent-consistency-model:553803fd018b3cf875a8bc774c99da9b33f36647badfd88a6eec90d61c5f62fc',
+        'input_field': 'prompt',
+        'input_type': 'text',
+        'output_type': 'photo',
+        'available_params': {
+            'num_images': {
+                'type': 'int',
+                'default': 1,
+                'min': 1,
+                'max': 5,
+                'description': 'Number of images to output'
+            }
+        }
+    },
     'styleclip': {
         'description': 'StyleCLIP, Text-Driven Manipulation of StyleGAN Imagery',
         'replicate_id': 'orpatashnik/styleclip:7af9a66f36f97fee2fece7dcc927551a951f0022cbdd23747b9212f23fc17021',
@@ -139,6 +175,19 @@ REPLICATE_MODELS = {
             'target': {
                 'type': 'str',
                 'description': 'Target image description'
+            },
+        }
+    },
+    'controlnet-lineart-prompt': {
+        'description': 'controlnet 1.1 lineart x realistic-vision-v2.0 (updated to v5)',
+        'replicate_id': 'usamaehsan/controlnet-1.1-x-realistic-vision-v2.0:51778c7522eb99added82c0c52873d7a391eecf5fcc3ac7856613b7e6443f2f7',
+        'input_type': 'text',
+        'input_field': 'prompt',
+        'output_type': 'photo',
+        'available_params': {
+            'image': {
+                'type': 'photo',
+                'description': 'Input image'
             },
         }
     },
