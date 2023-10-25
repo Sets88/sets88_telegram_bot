@@ -20,7 +20,7 @@ if config.REPLICATE_API_KEY:
 
 REPLICATE_MODELS = {
     'stable-diffusion': {
-        'replicate_id': 'stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf',
+        'replicate_id': 'stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4',
         'description': 'Stable Diffusion, a latent text-to-image diffusion model capable of generating photo-realistic images given any text input',
         'input_type': 'text',
         'output_type': 'photo'
@@ -41,38 +41,39 @@ REPLICATE_MODELS = {
         }
     },
     'kandinsky': {
-        'description': 'Kandinsky 2.1, text2img model trained on LAION HighRes and fine-tuned on internal datasets',
-        'replicate_id': 'ai-forever/kandinsky-2:601eea49d49003e6ea75a11527209c4f510a93e2112c969d548fbb45b9c4f19f',
+        'description': 'Kandinsky 2.2, text2img model trained on LAION HighRes and fine-tuned on internal datasets',
+        'replicate_id': 'ai-forever/kandinsky-2.2:ea1addaab376f4dc227f5368bbd8eff901820fd1cc14ed8cad63b29249e9d463',
         'input_type': 'text',
         'output_type': 'photo',
         'available_params': {
             'num_inference_steps': {
                 'type': 'int',
-                'default': 50,
+                'default': 75,
                 'min': 1,
                 'max': 1000,
                 'description': 'Number of denoising steps'
             },
-            'guidance_scale': {
-                'type': 'int',
-                'default': 4,
-                'description': 'Scale for classifier-free guidance'
-            },
-            'scheduler': {
-                'type': 'select',
-                'options': ['ddim_sampler', 'p_sampler', 'plms_sampler'],
-                'default': 'p_sampler'
-            },
             'width': {
                 'type': 'int',
                 'default': 512,
+                'min': 384,
+                'max': 2048,
                 'description': 'Width of the image'
             },
             'height': {
                 'type': 'int',
                 'default': 512,
+                'min': 384,
+                'max': 2048,
                 'description': 'Height of the image'
             },
+            'num_outputs': {
+                'type': 'int',
+                'default': 1,
+                'min': 1,
+                'max': 10,
+                'description': 'Amount of images'
+            }
         }
     },
     'llama-2-70b': {
@@ -91,7 +92,7 @@ REPLICATE_MODELS = {
             },
             'max_new_tokens': {
                 'type': 'int',
-                'default': 1024,
+                'default': 128,
                 'description': 'Minimum number of tokens to generate. To disable, set to -1. A word is generally 2-3 tokens'
             },
             'system_prompt': {
@@ -120,7 +121,7 @@ REPLICATE_MODELS = {
     },
     'blip-2': {
         'description': 'Blip, bootstrapping Language-Image Pre-training, send photo to get caption or ask question',
-        'replicate_id': 'andreasjansson/blip-2:4b32258c42e9efd4288bb9910bc532a69727f9acd26aa08e175713a0a857a608',
+        'replicate_id': 'andreasjansson/blip-2:9109553e37d266369f2750e407ab95649c63eb8e13f13b1f3983ff0feb2f9ef7',
         'input_type': 'photo',
         'input_field': 'image',
         'output_type': 'text',
@@ -145,8 +146,8 @@ REPLICATE_MODELS = {
         'input_type': 'text',
         'output_type': 'photo'
     },
-    'latent-consistency-model':  {
-        'description': 'Synthesizing High-Resolution Images with Few-Step Inference',
+    'LCM':  {
+        'description': 'latent-consistency-model: Synthesizing High-Resolution Images with Few-Step Inference',
         'replicate_id': 'luosiallen/latent-consistency-model:553803fd018b3cf875a8bc774c99da9b33f36647badfd88a6eec90d61c5f62fc',
         'input_field': 'prompt',
         'input_type': 'text',
@@ -178,8 +179,8 @@ REPLICATE_MODELS = {
             },
         }
     },
-    'controlnet-lineart-prompt': {
-        'description': 'controlnet 1.1 lineart x realistic-vision-v2.0 (updated to v5)',
+    'controlnet-prompt': {
+        'description': 'controlnet 1.1 lineart x realistic-vision-v2.0 (updated to v5), send photo and ask to modify it',
         'replicate_id': 'usamaehsan/controlnet-1.1-x-realistic-vision-v2.0:51778c7522eb99added82c0c52873d7a391eecf5fcc3ac7856613b7e6443f2f7',
         'input_type': 'text',
         'input_field': 'prompt',
@@ -248,21 +249,7 @@ REPLICATE_MODELS = {
         'replicate_id': 'methexis-inc/img2prompt:50adaf2d3ad20a6f911a8a9e3ccf777b263b8596fbd2c8fc26e8888f8a0edbb5',
         'input_type': 'photo',
         'output_type': 'text'
-    },
-    'instructblip-vicuna13b': {
-        'description': 'An instruction-tuned multi-modal model based on BLIP-2 and Vicuna-13B',
-        'replicate_id': 'joehoover/instructblip-vicuna13b:c4c54e3c8c97cd50c2d2fec9be3b6065563ccf7d43787fb99f84151b867178fe',
-        'input_type': 'text',
-        'input_field': 'prompt',
-        'output_type': 'text',
-        'available_params': {
-            'img': {
-                'type': 'photo',
-                'description': 'Input image'
-            },
-        }
     }
-
 }
 
 
