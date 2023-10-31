@@ -205,9 +205,9 @@ REPLICATE_MODELS = {
             },
         }
     },
-    'controlnet-hough': {
-        'description': 'ControlNet, modify images using M-LSD line detection',
-        'replicate_id': 'jagilley/controlnet-hough:854e8727697a057c525cdb45ab037f64ecca770a1769cc52287c2e56472a247b',
+    'Kandins-CN': {
+        'description': 'Kandinsky Image Generation with ControlNet Conditioning',
+        'replicate_id': 'cjwbw/kandinsky-2-2-controlnet-depth:98b54ca0b42be225e927f1dae2d9c506e69fe5b3bce301e13718d662a227a12b',
         'input_type': 'text',
         'input_field': 'prompt',
         'output_type': 'photo',
@@ -216,6 +216,18 @@ REPLICATE_MODELS = {
                 'type': 'photo',
                 'description': 'Input image'
             },
+            'task': {
+                'type': 'select',
+                'options': ['text2img', 'img2img'],
+                'default': 'img2img'
+            },
+            'num_inference_steps': {
+                'type': 'int',
+                'default': 70,
+                'min': 1,
+                'max': 500,
+                'description': 'Number of inference steps, if you want to get more detailed image increase this number'
+            }
         }
     },
     'controlnet-hed': {
