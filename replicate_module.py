@@ -20,10 +20,20 @@ if config.REPLICATE_API_KEY:
 
 REPLICATE_MODELS = {
     'stable-diffusion': {
-        'replicate_id': 'stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4',
+        'replicate_id': 'stability-ai/sdxl:c221b2b8ef527988fb59bf24a8b97c4561f1c671f73bd389f866bfb27c061316',
         'description': 'Stable Diffusion, a latent text-to-image diffusion model capable of generating photo-realistic images given any text input',
         'input_type': 'text',
-        'output_type': 'photo'
+        'output_type': 'photo',
+        'available_params': {
+            'image': {
+                'type': 'photo',
+                'description': 'Input image, for image2image task'
+            },
+            'mask': {
+                'type': 'photo',
+                'description': 'Mask image, for inpaint task'
+            }
+        }
     },
     'real-esrgan': {
         'description': 'Real-ESRGAN is a GAN-based image super-resolution model trained on real-world images. It can be used to upscale images to 4x the original resolution.',
