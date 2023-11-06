@@ -396,7 +396,7 @@ async def chat_set_init(botnav: TeleBotNav, message: Message) -> None:
 
 async def chat_reset_conversation(botnav: TeleBotNav, message: Message) -> None:
     message.state_data['conversation_id'] = openai_instance.chat_new_conversation(message.chat.id)
-    await botnav.bot.edit_message_text("Conversation was reset", message.chat.id, message.message_id)
+    await botnav.bot.send_message(message.chat.id, "Conversation was reset")
 
 
 async def chat_choose_role(botnav: TeleBotNav, message: Message) -> None:
@@ -481,9 +481,10 @@ async def chat_options(botnav: TeleBotNav, message: Message) -> None:
             'Set init': chat_set_init_request,
             'Clean conversation': chat_clean_conversation,
             'Choose Model': chat_models_list,
+            'Choose role': chat_choose_role,
         },
-        message_to_rewrite=message,
-        row_width=2
+        row_width=2,
+        text='Options:'
     )
 
 
@@ -491,15 +492,19 @@ async def start_chat_gpt(botnav: TeleBotNav, message: Message) -> None:
     await botnav.print_buttons(
         message.chat.id,
         {
-            'Reset conversation': chat_reset_conversation,
-            'Choose role': chat_choose_role,
-            'Options': chat_options,
+            '🔄 Reset conversation': chat_reset_conversation,
+            '⚙️ Options': chat_options,
         },
-        'For configurations purpose:',
-        row_width=2
+        'Additional options:',
+        row_width=1
     )
+
+    botnav.clear_commands(message, keep_commands=['start'])
+    botnav.add_command(message, 'chat_gpt_reset', '🔄 Reset conversation', chat_reset_conversation)
+    botnav.add_command(message, 'chat_gpt_options', '⚙️ Chat gpt Options', chat_options)
     await botnav.bot.send_message(message.chat.id, 'Welcome to Chat GPT, lets chat!')
     await botnav.set_default_handler(message, chat_gpt_message_handler)
+    await botnav.send_commands(message)
 
 
 openai_instance = OpenAi()
