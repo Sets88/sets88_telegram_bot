@@ -9,6 +9,7 @@ from telebot.async_telebot import AsyncTeleBot
 from telebot.asyncio_storage import StateMemoryStorage
 from telebot.asyncio_storage import StateStorageBase
 from telebot.types import BotCommand
+from telebot.types import BotCommandScopeChat
 from telebot.types import CallbackQuery
 from telebot.types import InlineKeyboardMarkup
 from telebot.types import InlineKeyboardButton
@@ -73,15 +74,32 @@ class TeleBotNav:
     async def set_next_handler(self, message: Message, func: Callable) -> None:
         message.state_data['next_handler'] = func
 
-    async def set_command(self, command: str, description: str, func: Callable) -> None:
-        self.commands[command] = {
+    def clear_commands(self, message: Message, keep_commands=None) -> None:
+        if not keep_commands:
+            message.state_data['commands'] = {}
+            return
+
+        message.state_data['commands'] = {
+            x: y for x, y in message.state_data['commands'].items() if x in keep_commands
+        }
+
+    def add_command(self, message: Message, command: str, description: str, func: Callable) -> None:
+        message.state_data['commands'][command] = {
             'description': description,
             'func': func,
         }
 
-    async def send_commands(self) -> None:
+    async def send_commands(self, message: Message) -> None:
+        await self.bot.set_my_commands(
+            [
+                BotCommand('/' + x, y['description']) for x, y in message.state_data['commands'].items()
+            ],
+            scope=BotCommandScopeChat(message.chat.id)
+        )
+
+    async def send_init_commands(self, commands: dict) -> None:
         await self.bot.set_my_commands([
-            BotCommand(x, y['description']) for x, y in self.commands.items()
+            BotCommand(x, y) for x, y in commands.items()
         ])
 
     async def callback_query_handler(self, call: CallbackQuery) -> None:
@@ -114,8 +132,8 @@ class TeleBotNav:
 
         async with self.bot.retrieve_data(message.from_user.id, message.chat.id) as state_data:
             message.state_data = state_data
-            if message.content_type == 'text' and message.text.startswith('/') and message.text[1:] in self.commands:
-                await self.commands[message.text[1:]]['func'](self, message)
+            if message.content_type == 'text' and message.text.startswith('/') and 'commands' in state_data and message.text[1:] in state_data['commands']:
+                await state_data['commands'][message.text[1:]]['func'](self, message)
             elif state_data and 'next_handler' in state_data:
                 func = state_data.pop('next_handler')
                 await func(self, message)

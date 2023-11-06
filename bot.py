@@ -31,19 +31,21 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
     await botnav.print_buttons(
         message.chat.id,
         {
-            'Chat GPT': openai_module.start_chat_gpt if config.OPENAI_API_KEY else None,
-            'Dall-E': openai_module.start_dalle if config.OPENAI_API_KEY else None,
-            'Whisper': openai_module.start_whisper if config.OPENAI_API_KEY else None,
-            'Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
-            'Youtube-DL': youtube_dl_module.start_youtube_dl,
+            '🧠 Chat GPT': openai_module.start_chat_gpt if config.OPENAI_API_KEY else None,
+            '🖌️ Dall-E': openai_module.start_dalle if config.OPENAI_API_KEY else None,
+            '🗣️ Whisper': openai_module.start_whisper if config.OPENAI_API_KEY else None,
+            '💻 Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
+            '📼 Youtube-DL': youtube_dl_module.start_youtube_dl,
         }, 'Choose',
         row_width=2
     )
-    await botnav.send_commands()
+    botnav.clear_commands(message)
+    botnav.add_command(message, 'start', '🏁 Start the bot', start)
+    await botnav.send_commands(message)
 
 
 async def main() -> None:
-    await botnav.set_command('start', 'Start the bot', start)
+    await botnav.send_init_commands({'start': '🏁 Start the bot'})
     await botnav.set_global_default_handler(start)
     await botnav.bot.polling()
 
