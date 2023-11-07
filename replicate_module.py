@@ -544,7 +544,7 @@ async def start_replicate(botnav: TeleBotNav, message: Message) -> None:
         text='Choose model:'
     )
 
-    botnav.wipe_commands(message, keep_commands=['start'])
+    botnav.wipe_commands(message, preserve=['start'])
     botnav.add_command(message, 'replicate_models', '🧰 Replicate models', start_replicate)
     await botnav.send_commands(message)
     await botnav.set_default_handler(message, replicate_message_handler)
