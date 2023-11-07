@@ -31,15 +31,13 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
     await botnav.print_buttons(
         message.chat.id,
         {
-            '🧠 Chat GPT': openai_module.start_chat_gpt if config.OPENAI_API_KEY else None,
-            '🖌️ Dall-E': openai_module.start_dalle if config.OPENAI_API_KEY else None,
-            '🗣️ Whisper': openai_module.start_whisper if config.OPENAI_API_KEY else None,
+            '🧠 OpenAI': openai_module.start_openai if config.OPENAI_API_KEY else None,
             '💻 Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
             '📼 Youtube-DL': youtube_dl_module.start_youtube_dl,
         }, 'Choose',
         row_width=2
     )
-    botnav.clear_commands(message)
+    botnav.wipe_commands(message)
     botnav.add_command(message, 'start', '🏁 Start the bot', start)
     await botnav.send_commands(message)
 

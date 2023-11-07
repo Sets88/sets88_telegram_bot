@@ -1,22 +1,23 @@
 import os
+import io
 import json
+import base64
 import asyncio
 from io import BytesIO
 import functools
 from random import randrange
 from time import time
 from typing import BinaryIO
+from typing import Optional
 
-import openai
+from openai import AsyncOpenAI
+from openai import RateLimitError
 from telebot.types import Message
 from pydub import AudioSegment
 
 import config
 from telebot_nav import TeleBotNav
 from logger import logger
-
-
-openai.api_key = config.OPENAI_API_KEY
 
 
 CONV_PATH = os.path.join(os.path.dirname(__file__), "conv")
@@ -33,7 +34,7 @@ OPENAI_OPTIONS = dict(
 DEFAULT_GPT_MODEL = 'gpt-3.5-turbo'
 
 AVAILABLE_GPT_MODELS = [
-    'gpt-3.5-turbo', 'gpt-4', 'gpt-3.5-turbo-16k'
+    'gpt-3.5-turbo', 'gpt-4', 'gpt-3.5-turbo-16k', 'gpt-4-vision-preview'
 ]
 
 CHAT_ROLES = {
@@ -95,9 +96,13 @@ CHAT_ROLES = {
 }
 
 
-class OpenAi():
+class OpenAiAdapter():
     def __init__(self) -> None:
         self.conversations = {}
+        self.client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+
+    def encode_jpg_image(self, image: bytes):
+        return "data:image/jpeg;base64," + base64.b64encode(image).decode('utf-8')
 
     def chat_load_converstation(self, user_id: int, conversation_id: str) -> None:
         self.conversations[f'{user_id}_{conversation_id}'] = json.load(
@@ -124,14 +129,26 @@ class OpenAi():
             open(os.path.join(CONV_PATH, f"{user_id}_{conversation_id}.json"), "w")
         )
 
-    def chat_add_message(self, user_id: int, conversation_id: str, message: str) -> None:
+    def chat_add_message(
+            self,
+            user_id: int,
+            conversation_id: str,
+            message: str,
+            image: Optional[io.BytesIO] = None
+    ) -> None:
         conv_data = self.conversations[f'{user_id}_{conversation_id}']
         if conv_data['one_off']:
             conv_data['messages'] = []
 
-        conv_data['messages'].append(
-            {'role': 'user', 'content': message}
-        )
+        content = []
+
+        if message:
+            content.append({ "type": "text", "text": message })
+
+        if image:
+            content.append({"type": "image_url", "image_url": self.encode_jpg_image(image)})
+
+        conv_data['messages'].append({'role': 'user', 'content': content})
 
         self.chat_save_conversation(user_id, conversation_id)
 
@@ -152,7 +169,7 @@ class OpenAi():
 
         print(messages)
 
-        gen = await openai.ChatCompletion.acreate(
+        gen = await self.client.chat.completions.create(
             model= self.conversations[f'{user_id}_{conversation_id}'].get('model', DEFAULT_GPT_MODEL),
             messages=messages,
             stream=True,
@@ -161,7 +178,7 @@ class OpenAi():
 
         async for response in gen:
             if response.choices:
-                content = response.choices[0].delta.get('content')
+                content = response.choices[0].delta.content
                 if content:
                     full_response += content
                     yield content
@@ -175,20 +192,29 @@ class OpenAi():
         conv_data.update(kwargs)
 
     async def dalle_generate_image(self, prompt: str) -> str:
-        response = await openai.Image.acreate(
+        response = await self.client.images.generate(
+            model="dall-e-3",
             prompt=prompt,
             n=1,
-            size="512x512"
+            size="1024x1024"
         )
-        return response['data'][0]['url']
+        return response.data[0].url
 
     async def whisper_transcribe(self, audio: BinaryIO) -> str:
-        response = await openai.Audio.atranscribe(
+        response = await self.client.audio.transcriptions.create(
             model='whisper-1',
             file=audio,
         )
 
         return response.text
+
+    async def tts_generate_audio(self, text: str, voice: str) -> BinaryIO:
+        response = await self.client.audio.speech.create(
+            model='tts-1',
+            input=text,
+            voice=voice
+        )
+        return response
 
 
 def get_mp3_from_ogg(file_content: BinaryIO) -> BytesIO:
@@ -210,13 +236,14 @@ async def extract_text_from_voice(botnav: TeleBotNav, message: Message) -> str:
     return text
 
 
-async def chat_gpt_handle_text_message(botnav: TeleBotNav, message: Message, text: str) -> None:
+async def chat_gpt_handle_text_message(botnav: TeleBotNav, message: Message, text: str, image: Optional[bytes]) -> None:
     get_or_create_conversation(botnav, message)
 
     openai_instance.chat_add_message(
         botnav.get_user(message).id,
         message.state_data['conversation_id'],
-        text
+        text,
+        image
     )
     parts = []
 
@@ -232,7 +259,7 @@ async def chat_gpt_handle_text_message(botnav: TeleBotNav, message: Message, tex
                 await botnav.bot.send_message(message.chat.id, "".join(parts))
                 parts = []
         await botnav.bot.send_message(message.chat.id, "".join(parts))
-    except openai.error.RateLimitError as exc:
+    except RateLimitError as exc:
         await botnav.bot.send_message(message.chat.id, 'OpenAi servers are overloaded, try again later')
         logger.exception(exc)
     except Exception as exc:
@@ -247,7 +274,7 @@ async def chat_gpt_handle_text_message(botnav: TeleBotNav, message: Message, tex
 
 
 async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None:
-    if message.content_type not in ('text', 'voice'):
+    if message.content_type not in ('text', 'voice', 'photo'):
         return
 
     if message.content_type == 'voice':
@@ -259,15 +286,25 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
 
         await botnav.bot.send_message(message.chat.id, f'You said: "{text}"')
 
+    text = ''
+    image = None
+
     if message.content_type == 'text':
         text = message.text
 
-    await chat_gpt_handle_text_message(botnav, message, text)
+    if message.content_type == 'photo':
+        text = message.caption
+        file_info = await botnav.bot.get_file(message.photo[-1].file_id)
+        image = await botnav.bot.download_file(file_info.file_path)
+
+    await chat_gpt_handle_text_message(botnav, message, text, image)
 
 
 async def start_whisper(botnav: TeleBotNav, message: Message) -> None:
+    botnav.wipe_commands(message, preserve=['start', 'openai'])
     await botnav.bot.send_message(message.chat.id, 'Welcome to Whisper, send me voice message to transcribe!')
     await botnav.set_default_handler(message, whisper_message_handler)
+    await botnav.send_commands(message)
 
 
 async def whisper_message_handler(botnav: TeleBotNav, message: Message) -> None:
@@ -287,8 +324,10 @@ async def whisper_message_handler(botnav: TeleBotNav, message: Message) -> None:
 
 
 async def start_dalle(botnav: TeleBotNav, message: Message) -> None:
+    botnav.wipe_commands(message, preserve=['start', 'openai'])
     await botnav.bot.send_message(message.chat.id, 'Welcome to DALL-E, ask me to draw something!')
     await botnav.set_default_handler(message, dalle_message_handler)
+    await botnav.send_commands(message)
 
 
 async def dalle_message_handler(botnav: TeleBotNav, message: Message) -> None:
@@ -306,6 +345,56 @@ async def dalle_message_handler(botnav: TeleBotNav, message: Message) -> None:
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
         logger.exception(exc)
+
+
+async def tts_message_handler(botnav: TeleBotNav, message: Message) -> None:
+    if message.content_type != 'text':
+        return
+
+    if 'openai_params' in message.state_data:
+        voice = message.state_data['openai_params'].get('tts_voice', 'alloy')
+
+    try:
+        response = await botnav.await_coro_sending_action(
+            message.chat.id,
+            openai_instance.tts_generate_audio(message.text, voice),
+            'upload_audio'
+        )
+
+        await botnav.bot.send_voice(message.chat.id, io.BytesIO(response.content))
+    except Exception as exc:
+        await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
+        logger.exception(exc)
+
+
+async def start_tts(botnav: TeleBotNav, message: Message) -> None:
+    await botnav.print_buttons(
+        message.chat.id,
+        {
+            'Alloy': functools.partial(set_openai_param, 'tts_voice', 'alloy'),
+            'Echo': functools.partial(set_openai_param, 'tts_voice', 'echo'),
+            'Fable': functools.partial(set_openai_param, 'tts_voice', 'fable'),
+            'Onyx': functools.partial(set_openai_param, 'tts_voice', 'onyx'),
+            'Nova': functools.partial(set_openai_param, 'tts_voice', 'nova'),
+            'shimmer': functools.partial(set_openai_param, 'tts_voice', 'shimmer'),
+        },
+        'Available voices:',
+        row_width=3
+    )
+
+    botnav.wipe_commands(message, preserve=['start', 'openai'])
+    await botnav.bot.send_message(message.chat.id, 'Welcome to TTS, send me text to speech!')
+    await botnav.set_default_handler(message, tts_message_handler)
+    await botnav.send_commands(message)
+
+
+async def set_openai_param(param: str, value: str, botnav: TeleBotNav, message: Message) -> None:
+    if 'openai_params' not in message.state_data:
+        message.state_data['openai_params'] = {}
+
+    message.state_data['openai_params'][param] = value
+
+    await botnav.bot.send_message(message.chat.id, f'OpenAI param {param} was set to {value}')
 
 
 def get_or_create_conversation(botnav: TeleBotNav, message: Message) -> str:
@@ -499,7 +588,7 @@ async def start_chat_gpt(botnav: TeleBotNav, message: Message) -> None:
         row_width=1
     )
 
-    botnav.clear_commands(message, keep_commands=['start'])
+    botnav.wipe_commands(message, preserve=['start', 'openai'])
     botnav.add_command(message, 'chat_gpt_reset', '🔄 Reset conversation', chat_reset_conversation)
     botnav.add_command(message, 'chat_gpt_options', '⚙️ Chat gpt Options', chat_options)
     await botnav.bot.send_message(message.chat.id, 'Welcome to Chat GPT, lets chat!')
@@ -507,4 +596,20 @@ async def start_chat_gpt(botnav: TeleBotNav, message: Message) -> None:
     await botnav.send_commands(message)
 
 
-openai_instance = OpenAi()
+async def start_openai(botnav: TeleBotNav, message: Message) -> None:
+    await botnav.print_buttons(
+        message.chat.id,
+        {
+            '🤖 Chat GPT': start_chat_gpt,
+            '🖌️ Dall-E': start_dalle,
+            '🗣️ Whisper': start_whisper,
+            '💬 TTS': start_tts, 
+        }, 'Choose',
+        row_width=2
+    )
+    botnav.wipe_commands(message, preserve=['start'])
+    botnav.add_command(message, 'openai', '🧠 OpenAI models', start_openai)
+    await botnav.send_commands(message)
+
+
+openai_instance = OpenAiAdapter()
