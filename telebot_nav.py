@@ -74,13 +74,13 @@ class TeleBotNav:
     async def set_next_handler(self, message: Message, func: Callable) -> None:
         message.state_data['next_handler'] = func
 
-    def clear_commands(self, message: Message, keep_commands=None) -> None:
-        if not keep_commands:
+    def wipe_commands(self, message: Message, preserve: list[str] = None) -> None:
+        if not preserve:
             message.state_data['commands'] = {}
             return
 
         message.state_data['commands'] = {
-            x: y for x, y in message.state_data['commands'].items() if x in keep_commands
+            x: y for x, y in message.state_data['commands'].items() if x in preserve
         }
 
     def add_command(self, message: Message, command: str, description: str, func: Callable) -> None:

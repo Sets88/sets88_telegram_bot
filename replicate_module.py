@@ -1,7 +1,6 @@
 import os
 import asyncio
 import functools
-import json
 from io import BytesIO
 from copy import copy
 
@@ -65,14 +64,14 @@ REPLICATE_MODELS = {
             },
             'width': {
                 'type': 'int',
-                'default': 512,
+                'default': 1024,
                 'min': 384,
                 'max': 2048,
                 'description': 'Width of the image'
             },
             'height': {
                 'type': 'int',
-                'default': 512,
+                'default': 1024,
                 'min': 384,
                 'max': 2048,
                 'description': 'Height of the image'
@@ -112,21 +111,16 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'blip': {
-        'description': 'Blip, bootstrapping Language-Image Pre-training, send photo to get caption',
-        'replicate_id': 'salesforce/blip:2e1dddc8621f72155f24cf2e0adbde548458d3cab9f00c0139eea840d0ac4746',
-        'input_type': 'photo',
-        'output_type': 'text',
+    'sdxl-controlnet-lora': {
+        'description': 'SDXL Canny controlnet with LoRA support.',
+        'replicate_id': 'batouresearch/sdxl-controlnet-lora:a65bcd11a0db0f9cd33d6bf2a76925235c45450c71f38c1150b932a72e50a7f9',
+        'input_type': 'text',
+        'output_type': 'photo',
         'available_params': {
-            'task': {
-                'type': 'select',
-                'options': ['image_captioning', 'visual_question_answering'],
-                'default': 'image_captioning'
-            },
-            'question': {
-                'type': 'str',
-                'description': 'Question for VQA'
-            },
+            'image': {
+                'type': 'photo',
+                'description': 'Input image'
+            }
         }
     },
     'blip-2': {
@@ -550,7 +544,7 @@ async def start_replicate(botnav: TeleBotNav, message: Message) -> None:
         text='Choose model:'
     )
 
-    botnav.clear_commands(message, keep_commands=['start'])
+    botnav.wipe_commands(message, keep_commands=['start'])
     botnav.add_command(message, 'replicate_models', '🧰 Replicate models', start_replicate)
     await botnav.send_commands(message)
     await botnav.set_default_handler(message, replicate_message_handler)
