@@ -293,6 +293,13 @@ async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None
         text = message.text
 
     if message.content_type == 'photo':
+        # As only gpt-4-vision-preview model may work with images
+        openai_instance.chat_set_options(
+            message.chat.id,
+            get_or_create_conversation(botnav, message),
+            model='gpt-4-vision-preview'
+        )
+
         text = message.caption
         file_info = await botnav.bot.get_file(message.photo[-1].file_id)
         image = await botnav.bot.download_file(file_info.file_path)
