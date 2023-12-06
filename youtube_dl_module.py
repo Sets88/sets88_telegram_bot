@@ -1,16 +1,20 @@
 import os
 import asyncio
 import functools
+from datetime import datetime
 from uuid import uuid4
 
 import yt_dlp
 from telebot.types import Message
+import shutil
 
 from telebot_nav import TeleBotNav
 from logger import logger
+import config
 
 
 VIDEO_TMP_DIR = '/tmp'
+MAX_FILE_SIZE = 49 * 1024 * 1024
 
 
 def download_file(url: str, options: dict) -> None:
@@ -39,6 +43,24 @@ async def yt_format(botnav: TeleBotNav, message: Message) -> None:
     )
 
 
+def make_file_available_by_url(filename: str) -> None:
+    dt_dir = datetime.now().strftime('%Y-%m-%d')
+
+    os.makedirs(os.path.join(config.YT_DL_DIR, dt_dir), exist_ok=True)
+
+    shutil.copy(
+        filename,
+        os.path.join(
+            config.YT_DL_DIR,
+            dt_dir,
+            os.path.basename(filename)
+        )
+    )
+
+    url = f'{config.YT_DL_URL}/{dt_dir}/{os.path.basename(filename)}'
+    return url
+
+
 async def youtube_dl_message_handler(botnav: TeleBotNav, message: Message) -> None:
     if message.content_type != 'text':
         return
@@ -52,6 +74,16 @@ async def youtube_dl_message_handler(botnav: TeleBotNav, message: Message) -> No
 
         try:
             ext = os.path.splitext(filename)[-1].strip('.')
+            if os.stat(filename).st_size > MAX_FILE_SIZE:
+                if not config.YT_DL_DIR:
+                    await botnav.bot.send_message(message.chat.id, "File too big, try again later")
+                    return
+
+                url = make_file_available_by_url(filename)
+
+                await botnav.bot.send_message(message.chat.id, f"File too big, download it from {url}")
+                return
+
             if ext == 'm4a':
                 await botnav.await_coro_sending_action(
                     message.chat.id,

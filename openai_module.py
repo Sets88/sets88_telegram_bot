@@ -3,6 +3,7 @@ import io
 import json
 import base64
 import asyncio
+from hashlib import md5
 from io import BytesIO
 import functools
 from random import randrange
@@ -33,9 +34,16 @@ OPENAI_OPTIONS = dict(
 
 DEFAULT_GPT_MODEL = 'gpt-3.5-turbo'
 
-AVAILABLE_GPT_MODELS = [
-    'gpt-3.5-turbo', 'gpt-4', 'gpt-3.5-turbo-16k', 'gpt-4-vision-preview'
-]
+AVAILABLE_GPT_MODELS = {
+    'gpt-3.5-turbo': {},
+    'gpt-4': {
+        'max_tokens': 4096
+    },
+    'gpt-3.5-turbo-16k': {
+        'max_tokens': 4096
+    },
+    'gpt-4-vision-preview': {}
+}
 
 CHAT_ROLES = {
     'Funnyman': {
@@ -172,6 +180,7 @@ class OpenAiAdapter():
         gen = await self.client.chat.completions.create(
             model= self.conversations[f'{user_id}_{conversation_id}'].get('model', DEFAULT_GPT_MODEL),
             messages=messages,
+            user=md5(f'aaa-{user_id}-bbb'.encode('utf-8')).hexdigest(),
             stream=True,
             **params
         )
@@ -217,182 +226,382 @@ class OpenAiAdapter():
         return response
 
 
-def get_mp3_from_ogg(file_content: BinaryIO) -> BytesIO:
-    file = BytesIO(file_content)
-    file.seek(0)
-    ogg = AudioSegment.from_ogg(file)
-    mp3 = BytesIO()
-    ogg.export(mp3, format='mp3')
-    mp3.seek(0)
-    return mp3
+class ChatGpTRouter:
+    @classmethod
+    async def reset_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
+        message.state_data['conversation_id'] = openai_instance.chat_new_conversation(message.chat.id)
+        await botnav.bot.send_message(message.chat.id, "Conversation was reset")
 
+    @classmethod
+    async def get_reply(cls, botnav: TeleBotNav, message: Message) -> None:
+        parts = []
 
-async def extract_text_from_voice(botnav: TeleBotNav, message: Message) -> str:
-    file_info = await botnav.bot.get_file(message.voice.file_id)
-    file_content = await botnav.bot.download_file(file_info.file_path)
-    file = await asyncio.to_thread(get_mp3_from_ogg, file_content)
-    file.name = 'voice.mp3'
-    text = await openai_instance.whisper_transcribe(file)
-    return text
+        await botnav.send_chat_action(message.chat.id, 'typing')
 
+        try:
+            async for reply in openai_instance.chat_get_reply(botnav.get_user(message).id, message.state_data['conversation_id']):
+                await botnav.send_chat_action(message.chat.id, 'typing')
 
-async def chat_gpt_handle_text_message(botnav: TeleBotNav, message: Message, text: str, image: Optional[bytes]) -> None:
-    get_or_create_conversation(botnav, message)
+                parts.append(reply)
 
-    openai_instance.chat_add_message(
-        botnav.get_user(message).id,
-        message.state_data['conversation_id'],
-        text,
-        image
-    )
-    parts = []
+                if len(parts) > 500:
+                    await botnav.bot.send_message(message.chat.id, "".join(parts))
+                    parts = []
+            await botnav.bot.send_message(message.chat.id, "".join(parts))
+        except RateLimitError as exc:
+            await botnav.bot.send_message(message.chat.id, 'OpenAi servers are overloaded, try again later')
+            logger.exception(exc)
+            cls.clean_conversation(botnav, message)
+        except Exception as exc:
+            if getattr(exc, 'code', None) == 'context_length_exceeded':
+                await botnav.bot.send_message(message.chat.id, getattr(exc, 'user_message', "Something went wrong, try again later"))
+                await cls.clean_conversation(botnav, message)
+                return
 
-    await botnav.send_chat_action(message.chat.id, 'typing')
+            await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
+            logger.exception(exc)
+            message.state_data.clear()
 
-    try:
-        async for reply in openai_instance.chat_get_reply(botnav.get_user(message).id, message.state_data['conversation_id']):
-            await botnav.send_chat_action(message.chat.id, 'typing')
-
-            parts.append(reply)
-
-            if len(parts) > 500:
-                await botnav.bot.send_message(message.chat.id, "".join(parts))
-                parts = []
-        await botnav.bot.send_message(message.chat.id, "".join(parts))
-    except RateLimitError as exc:
-        await botnav.bot.send_message(message.chat.id, 'OpenAi servers are overloaded, try again later')
-        logger.exception(exc)
-    except Exception as exc:
-        if getattr(exc, 'code', None) == 'context_length_exceeded':
-            await botnav.bot.send_message(message.chat.id, getattr(exc, 'user_message', "Something went wrong, try again later"))
-            await chat_clean_conversation(botnav, message)
+    @classmethod
+    def switch_gpt_model(cls, model: str, botnav: TeleBotNav, message: Message) -> None:
+        if model not in AVAILABLE_GPT_MODELS:
             return
 
-        await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
-        logger.exception(exc)
-        message.state_data.clear()
-
-
-async def chat_gpt_message_handler(botnav: TeleBotNav, message: Message) -> None:
-    if message.content_type not in ('text', 'voice', 'photo'):
-        return
-
-    if message.content_type == 'voice':
-        text = await botnav.await_coro_sending_action(
-            message.chat.id,
-            extract_text_from_voice(botnav, message),
-            'typing'
-        )
-
-        await botnav.bot.send_message(message.chat.id, f'You said: "{text}"')
-
-    text = ''
-    image = None
-
-    if message.content_type == 'text':
-        text = message.text
-
-    if message.content_type == 'photo':
-        # As only gpt-4-vision-preview model may work with images
         openai_instance.chat_set_options(
             message.chat.id,
             get_or_create_conversation(botnav, message),
-            model='gpt-4-vision-preview'
+            model=model,
+            **AVAILABLE_GPT_MODELS[model]
         )
 
-        text = message.caption
-        file_info = await botnav.bot.get_file(message.photo[-1].file_id)
-        image = await botnav.bot.download_file(file_info.file_path)
+    @classmethod
+    async def chat_message_handler(cls, botnav: TeleBotNav, message: Message):
+        if message.content_type not in ('text', 'voice', 'photo'):
+            return
 
-    await chat_gpt_handle_text_message(botnav, message, text, image)
+        text = ''
+        image = None
 
+        if message.content_type == 'voice':
+            text = await botnav.await_coro_sending_action(
+                message.chat.id,
+                WhisperRouter.extract_text_from_voice(botnav, message),
+                'typing'
+            )
 
-async def start_whisper(botnav: TeleBotNav, message: Message) -> None:
-    botnav.wipe_commands(message, preserve=['start', 'openai'])
-    await botnav.bot.send_message(message.chat.id, 'Welcome to Whisper, send me voice message to transcribe!')
-    await botnav.set_default_handler(message, whisper_message_handler)
-    await botnav.send_commands(message)
+            await botnav.bot.send_message(message.chat.id, f'You said: "{text}"')
 
+        if message.content_type == 'text':
+            text = message.text
 
-async def whisper_message_handler(botnav: TeleBotNav, message: Message) -> None:
-    if message.content_type != 'voice':
-        return
+        if message.content_type == 'photo':
+            # As only gpt-4-vision-preview model may work with images
+            cls.switch_gpt_model('gpt-4-vision-preview', botnav, message)
 
-    try:
-        text = await botnav.await_coro_sending_action(
+            text = message.caption
+            file_info = await botnav.bot.get_file(message.photo[-1].file_id)
+            image = await botnav.bot.download_file(file_info.file_path)
+
+        get_or_create_conversation(botnav, message)
+
+        openai_instance.chat_add_message(
+            botnav.get_user(message).id,
+            message.state_data['conversation_id'],
+            text,
+            image
+        )
+
+        if message.state_data.get('delayed_message', False):
+            await botnav.print_buttons(
+                message.chat.id,
+                {
+                    '📩 Send': cls.get_reply,
+                },
+                'Press to send'
+            )
+            return
+
+        await cls.get_reply(botnav, message)
+
+    @classmethod
+    async def set_one_off(cls, botnav: TeleBotNav, message: Message) -> None:
+        openai_instance.chat_set_options(
             message.chat.id,
-            extract_text_from_voice(botnav, message),
-            'typing'
+            get_or_create_conversation(botnav, message),
+            one_off=True
         )
-        await botnav.bot.send_message(message.chat.id, text)
-    except Exception as exc:
-        await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
-        logger.exception(exc)
 
-
-async def start_dalle(botnav: TeleBotNav, message: Message) -> None:
-    botnav.wipe_commands(message, preserve=['start', 'openai'])
-    await botnav.bot.send_message(message.chat.id, 'Welcome to DALL-E, ask me to draw something!')
-    await botnav.set_default_handler(message, dalle_message_handler)
-    await botnav.send_commands(message)
-
-
-async def dalle_message_handler(botnav: TeleBotNav, message: Message) -> None:
-    if message.content_type != 'text':
-        return
-
-    try:
-        url = await botnav.await_coro_sending_action(
+        await botnav.bot.edit_message_text(
+            'Conversation switched to single question/answer mode. '
+            'Model will forget conversation after response',
             message.chat.id,
-            openai_instance.dalle_generate_image(message.text),
-            'upload_photo'
+            message.message_id
         )
 
-        await botnav.bot.send_photo(message.chat.id, url)
-    except Exception as exc:
-        await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
-        logger.exception(exc)
+    @classmethod
+    async def switch_delayed_message_mode(cls, botnav: TeleBotNav, message: Message) -> None:
+        delayed_mode_enabled = message.state_data.get('delayed_message', False)
+        if delayed_mode_enabled:
+            await botnav.bot.send_message(message.chat.id, "Enter text of your request, after finish push send button")
+        else:
+            await botnav.bot.send_message(message.chat.id, "Send on command mode disabled")
+
+        message.state_data['delayed_message'] = not delayed_mode_enabled
+
+    @classmethod
+    async def set_temperature(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.send_message(message.chat.id, "Temperature was set to: " + message.text)
+
+        openai_instance.chat_set_options(
+            message.chat.id,
+            get_or_create_conversation(botnav, message),
+            temperature=float(message.text)
+        )
+
+    @classmethod
+    async def request_set_temperature(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.edit_message_text("Set temperature of model(0.0 - 2.0 Higher values causes model to increase"
+            " randomnes in its responses)", message.chat.id, message.message_id)
+
+        await botnav.set_next_handler(message, cls.set_temperature)
+
+    @classmethod
+    async def request_set_max_tokens(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.edit_message_text("Set maximum tokens in response"
+            " randomnes in its responses)", message.chat.id, message.message_id)
+
+        await botnav.set_next_handler(message, cls.set_max_tokens)
+
+    @classmethod
+    async def set_max_tokens(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.send_message(message.chat.id, "Max tokens was set to: " + message.text)
+
+        openai_instance.chat_set_options(
+            message.chat.id,
+            get_or_create_conversation(botnav, message),
+            max_tokens=int(message.text)
+        )
+
+    @classmethod
+    async def set_init(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.delete_message(message.chat.id, message.message_id)
+
+        openai_instance.chat_set_options(
+            message.chat.id,
+            get_or_create_conversation(botnav, message),
+            init=message.text
+        )
+
+        await botnav.bot.send_message(message.chat.id, "Init was set to: " + message.text)
+
+    @classmethod
+    async def request_set_init(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.edit_message_text("Set the description of your opponent", message.chat.id, message.message_id)
+        await botnav.set_next_handler(message, cls.set_init)
+
+    @classmethod
+    async def clean_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
+        openai_instance.chat_set_options(
+            message.chat.id,
+            get_or_create_conversation(botnav, message),
+            messages=[]
+        )
+
+        await botnav.bot.edit_message_text("Conversation was cleared", message.chat.id, message.message_id)
+
+    @classmethod
+    async def switch_gpt_model_and_notify(cls, model: str, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.delete_message(message.chat.id, message.message_id)
+
+        cls.switch_gpt_model(model, botnav, message)
+
+        await botnav.bot.send_message(message.chat.id, "Model was set to: " + model)
+
+    @classmethod
+    async def show_models_list(cls, botnav: TeleBotNav, message: Message) -> str:
+        await botnav.print_buttons(
+            message.chat.id,
+            {
+                x: functools.partial(cls.switch_gpt_model_and_notify, x) for x in AVAILABLE_GPT_MODELS.keys()
+            },
+            message_to_rewrite=message,
+            row_width=2,
+        )
+
+    @classmethod
+    async def set_role(cls, role: str, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.delete_message(message.chat.id, message.message_id)
+
+        openai_instance.chat_set_options(
+            message.chat.id,
+            get_or_create_conversation(botnav, message),
+            **CHAT_ROLES[role]
+        )
+
+        await botnav.bot.send_message(message.chat.id, "Init was set to: " + CHAT_ROLES[role]['init'][0:4000])
+
+    @classmethod
+    async def show_roles_list(cls, botnav: TeleBotNav, message: Message) -> str:
+        await botnav.print_buttons(
+            message.chat.id,
+            {
+                x: functools.partial(cls.set_role, x) for x in CHAT_ROLES.keys()
+            },
+            message_to_rewrite=message,
+            row_width=2,
+        )
+
+    @classmethod
+    async def show_chat_options(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.print_buttons(
+            message.chat.id,
+            {
+                '🎯 One Off': cls.set_one_off,
+                '📤 Send on command': cls.switch_delayed_message_mode,
+                '🌡️ Temperature': cls.request_set_temperature,
+                '🔢 Max tokens': cls.request_set_max_tokens,
+                '🏁 Set init': cls.request_set_init,
+                '🧹 Clean conversation': cls.clean_conversation,
+                '🤖 Choose Model': cls.show_models_list,
+                '👥 Choose role': cls.show_roles_list,
+            },
+            row_width=2,
+            text='Options:'
+        )
+
+    @classmethod
+    async def run(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.print_buttons(
+            message.chat.id,
+            {
+                '🔄 Reset conversation': cls.reset_conversation,
+                '⚙️ Options': cls.show_chat_options,
+            },
+            'Additional options:',
+            row_width=1
+        )
+
+        botnav.wipe_commands(message, preserve=['start', 'openai'])
+        botnav.add_command(message, 'chat_gpt_reset', '🔄 Reset conversation', cls.reset_conversation)
+        botnav.add_command(message, 'chat_gpt_options', '⚙️ Chat gpt Options', cls.show_chat_options)
+        await botnav.bot.send_message(message.chat.id, 'Welcome to Chat GPT, lets chat!')
+        await botnav.set_default_handler(message, cls.chat_message_handler)
+        await botnav.send_commands(message)
 
 
-async def tts_message_handler(botnav: TeleBotNav, message: Message) -> None:
-    if message.content_type != 'text':
-        return
+class WhisperRouter:
+    @classmethod
+    def get_mp3_from_ogg(cls, file_content: BinaryIO) -> BytesIO:
+        file = BytesIO(file_content)
+        file.seek(0)
+        ogg = AudioSegment.from_ogg(file)
+        mp3 = BytesIO()
+        ogg.export(mp3, format='mp3')
+        mp3.seek(0)
+        return mp3
 
-    if 'openai_params' in message.state_data:
+    @classmethod
+    async def extract_text_from_voice(cls, botnav: TeleBotNav, message: Message) -> str:
+        file_info = await botnav.bot.get_file(message.voice.file_id)
+        file_content = await botnav.bot.download_file(file_info.file_path)
+        file = await asyncio.to_thread(cls.get_mp3_from_ogg, file_content)
+        file.name = 'voice.mp3'
+        text = await openai_instance.whisper_transcribe(file)
+        return text
+
+    @classmethod
+    async def whisper_message_handler(cls, botnav: TeleBotNav, message: Message) -> None:
+        if message.content_type != 'voice':
+            return
+
+        try:
+            text = await botnav.await_coro_sending_action(
+                message.chat.id,
+                cls.extract_text_from_voice(botnav, message),
+                'typing'
+            )
+            await botnav.bot.send_message(message.chat.id, text)
+        except Exception as exc:
+            await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
+            logger.exception(exc)
+
+    @classmethod
+    async def run(cls, botnav: TeleBotNav, message: Message) -> None:
+        botnav.wipe_commands(message, preserve=['start', 'openai'])
+        await botnav.bot.send_message(message.chat.id, 'Welcome to Whisper, send me voice message to transcribe!')
+        await botnav.set_default_handler(message, cls.whisper_message_handler)
+        await botnav.send_commands(message)
+
+
+class DallERouter:
+    @classmethod
+    async def dalle_message_handler(cls, botnav: TeleBotNav, message: Message) -> None:
+        if message.content_type != 'text':
+            return
+
+        try:
+            url = await botnav.await_coro_sending_action(
+                message.chat.id,
+                openai_instance.dalle_generate_image(message.text),
+                'upload_photo'
+            )
+
+            await botnav.bot.send_photo(message.chat.id, url)
+        except Exception as exc:
+            await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
+            logger.exception(exc)
+
+    @classmethod
+    async def run(cls, botnav: TeleBotNav, message: Message):
+        botnav.wipe_commands(message, preserve=['start', 'openai'])
+        await botnav.bot.send_message(message.chat.id, 'Welcome to DALL-E, ask me to draw something!')
+        await botnav.set_default_handler(message, cls.dalle_message_handler)
+        await botnav.send_commands(message)
+
+
+class TTSRouter:
+    @classmethod
+    async def tts_message_handler(cls, botnav: TeleBotNav, message: Message) -> None:
+        if message.content_type != 'text':
+            return
+
+        if 'openai_params' not in message.state_data:
+            message.state_data['openai_params'] = {}
+
         voice = message.state_data['openai_params'].get('tts_voice', 'alloy')
 
-    try:
-        response = await botnav.await_coro_sending_action(
+        try:
+            response = await botnav.await_coro_sending_action(
+                message.chat.id,
+                openai_instance.tts_generate_audio(message.text, voice),
+                'upload_audio'
+            )
+
+            await botnav.bot.send_voice(message.chat.id, io.BytesIO(response.content))
+        except Exception as exc:
+            await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
+            logger.exception(exc)
+
+    @classmethod
+    async def run(cls, botnav: TeleBotNav, message: Message):
+        await botnav.print_buttons(
             message.chat.id,
-            openai_instance.tts_generate_audio(message.text, voice),
-            'upload_audio'
+            {
+                'Alloy': functools.partial(set_openai_param, 'tts_voice', 'alloy'),
+                'Echo': functools.partial(set_openai_param, 'tts_voice', 'echo'),
+                'Fable': functools.partial(set_openai_param, 'tts_voice', 'fable'),
+                'Onyx': functools.partial(set_openai_param, 'tts_voice', 'onyx'),
+                'Nova': functools.partial(set_openai_param, 'tts_voice', 'nova'),
+                'shimmer': functools.partial(set_openai_param, 'tts_voice', 'shimmer'),
+            },
+            'Available voices:',
+            row_width=3
         )
 
-        await botnav.bot.send_voice(message.chat.id, io.BytesIO(response.content))
-    except Exception as exc:
-        await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
-        logger.exception(exc)
-
-
-async def start_tts(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.print_buttons(
-        message.chat.id,
-        {
-            'Alloy': functools.partial(set_openai_param, 'tts_voice', 'alloy'),
-            'Echo': functools.partial(set_openai_param, 'tts_voice', 'echo'),
-            'Fable': functools.partial(set_openai_param, 'tts_voice', 'fable'),
-            'Onyx': functools.partial(set_openai_param, 'tts_voice', 'onyx'),
-            'Nova': functools.partial(set_openai_param, 'tts_voice', 'nova'),
-            'shimmer': functools.partial(set_openai_param, 'tts_voice', 'shimmer'),
-        },
-        'Available voices:',
-        row_width=3
-    )
-
-    botnav.wipe_commands(message, preserve=['start', 'openai'])
-    await botnav.bot.send_message(message.chat.id, 'Welcome to TTS, send me text to speech!')
-    await botnav.set_default_handler(message, tts_message_handler)
-    await botnav.send_commands(message)
+        botnav.wipe_commands(message, preserve=['start', 'openai'])
+        await botnav.bot.send_message(message.chat.id, 'Welcome to TTS, send me text to speech!')
+        await botnav.set_default_handler(message, cls.tts_message_handler)
+        await botnav.send_commands(message)
 
 
 async def set_openai_param(param: str, value: str, botnav: TeleBotNav, message: Message) -> None:
@@ -410,207 +619,14 @@ def get_or_create_conversation(botnav: TeleBotNav, message: Message) -> str:
     return message.state_data['conversation_id']
 
 
-async def chat_set_role(role: str, botnav: TeleBotNav, message: Message) -> None:
-    await botnav.bot.delete_message(message.chat.id, message.message_id)
-
-    openai_instance.chat_set_options(
-        message.chat.id,
-        get_or_create_conversation(botnav, message),
-        **CHAT_ROLES[role]
-    )
-
-    await botnav.bot.send_message(message.chat.id, "Init was set to: " + CHAT_ROLES[role]['init'][0:4000])
-
-
-async def chat_set_model(model: str, botnav: TeleBotNav, message: Message) -> None:
-    if model not in AVAILABLE_GPT_MODELS:
-        return
-
-    await botnav.bot.delete_message(message.chat.id, message.message_id)
-
-    openai_instance.chat_set_options(
-        message.chat.id,
-        get_or_create_conversation(botnav, message),
-        model=model
-    )
-
-    await botnav.bot.send_message(message.chat.id, "Model was set to: " + model)
-
-
-async def chat_set_max_tokens(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.bot.send_message(message.chat.id, "Max tokens was set to: " + message.text)
-
-    openai_instance.chat_set_options(
-        message.chat.id,
-        get_or_create_conversation(botnav, message),
-        max_tokens=int(message.text)
-    )
-
-
-async def chat_set_temparature(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.bot.send_message(message.chat.id, "Temperature was set to: " + message.text)
-
-    openai_instance.chat_set_options(
-        message.chat.id,
-        get_or_create_conversation(botnav, message),
-        temperature=float(message.text)
-    )
-
-
-async def chat_delayed_send_message(botnav: TeleBotNav, message: Message) -> None:
-    text = message.state_data.pop('pending_message')
-    await chat_gpt_handle_text_message(botnav, message, text)
-
-
-async def chat_delayed_collect_message(botnav: TeleBotNav, message: Message) -> None:
-    if 'pending_message' not in message.state_data:
-        message.state_data['pending_message'] = message.text
-    else:
-        message.state_data['pending_message'] = message.state_data['pending_message'] + '\n' + message.text
-
-    await botnav.print_buttons(
-        message.chat.id,
-        {
-            'Send': chat_delayed_send_message
-        },
-        'Press to send'
-    )
-    await botnav.set_next_handler(message, chat_delayed_collect_message)
-
-
-async def chat_set_init(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.bot.delete_message(message.chat.id, message.message_id)
-
-    openai_instance.chat_set_options(
-        message.chat.id,
-        get_or_create_conversation(botnav, message),
-        init=message.text
-    )
-
-    await botnav.bot.send_message(message.chat.id, "Init was set to: " + message.text)
-
-
-async def chat_reset_conversation(botnav: TeleBotNav, message: Message) -> None:
-    message.state_data['conversation_id'] = openai_instance.chat_new_conversation(message.chat.id)
-    await botnav.bot.send_message(message.chat.id, "Conversation was reset")
-
-
-async def chat_choose_role(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.print_buttons(
-        message.chat.id,
-        {
-            x: functools.partial(chat_set_role, x) for x in CHAT_ROLES.keys()
-        },
-        message_to_rewrite=message,
-        row_width=2,
-    )
-
-
-async def chat_models_list(botnav: TeleBotNav, message: Message) -> str:
-    await botnav.print_buttons(
-        message.chat.id,
-        {
-            x: functools.partial(chat_set_model, x) for x in AVAILABLE_GPT_MODELS
-        },
-        message_to_rewrite=message,
-        row_width=2,
-    )
-
-
-async def chat_delayed_message(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.bot.send_message(message.chat.id, "Enter text of your request, after finish push send button")
-    await botnav.set_next_handler(message, chat_delayed_collect_message)
-
-
-async def chat_one_off(botnav: TeleBotNav, message: Message) -> None:
-    openai_instance.chat_set_options(
-        message.chat.id,
-        get_or_create_conversation(botnav, message),
-        one_off=True
-    )
-
-    await botnav.bot.edit_message_text(
-        'Conversation switched to single question/answer mode. '
-        'Model will forget conversation after response',
-        message.chat.id,
-        message.message_id
-    )
-
-
-async def chat_set_init_request(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.bot.edit_message_text("Set the description of your opponent", message.chat.id, message.message_id)
-    await botnav.set_next_handler(message, chat_set_init)
-
-
-async def chat_max_tokens(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.bot.edit_message_text("Set maximum tokens in response"
-                                " randomnes in its responses)", message.chat.id, message.message_id)
-
-    await botnav.set_next_handler(message, chat_set_max_tokens)
-
-
-async def chat_temperature(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.bot.edit_message_text("Set temperature of model(0.0 - 2.0 Higher values causes model to increase"
-                                " randomnes in its responses)", message.chat.id, message.message_id)
-
-    await botnav.set_next_handler(message, chat_set_temparature)
-
-
-async def chat_clean_conversation(botnav: TeleBotNav, message: Message) -> None:
-    openai_instance.chat_set_options(
-        message.chat.id,
-        get_or_create_conversation(botnav, message),
-        messages=[]
-    )
-
-    await botnav.bot.edit_message_text("Conversation was reset", message.chat.id, message.message_id)
-
-
-async def chat_options(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.print_buttons(
-        message.chat.id,
-        {
-            'One Off': chat_one_off,
-            'Send on command': chat_delayed_message,
-            'Temperature': chat_temperature,
-            'Max tokens': chat_max_tokens,
-            'Set init': chat_set_init_request,
-            'Clean conversation': chat_clean_conversation,
-            'Choose Model': chat_models_list,
-            'Choose role': chat_choose_role,
-        },
-        row_width=2,
-        text='Options:'
-    )
-
-
-async def start_chat_gpt(botnav: TeleBotNav, message: Message) -> None:
-    await botnav.print_buttons(
-        message.chat.id,
-        {
-            '🔄 Reset conversation': chat_reset_conversation,
-            '⚙️ Options': chat_options,
-        },
-        'Additional options:',
-        row_width=1
-    )
-
-    botnav.wipe_commands(message, preserve=['start', 'openai'])
-    botnav.add_command(message, 'chat_gpt_reset', '🔄 Reset conversation', chat_reset_conversation)
-    botnav.add_command(message, 'chat_gpt_options', '⚙️ Chat gpt Options', chat_options)
-    await botnav.bot.send_message(message.chat.id, 'Welcome to Chat GPT, lets chat!')
-    await botnav.set_default_handler(message, chat_gpt_message_handler)
-    await botnav.send_commands(message)
-
-
 async def start_openai(botnav: TeleBotNav, message: Message) -> None:
     await botnav.print_buttons(
         message.chat.id,
         {
-            '🤖 Chat GPT': start_chat_gpt,
-            '🖌️ Dall-E': start_dalle,
-            '🗣️ Whisper': start_whisper,
-            '💬 TTS': start_tts, 
+            '🤖 Chat GPT': ChatGpTRouter.run,
+            '🖌️ Dall-E': DallERouter.run,
+            '🗣️ Whisper': WhisperRouter.run,
+            '💬 TTS': TTSRouter.run
         }, 'Choose',
         row_width=2
     )
