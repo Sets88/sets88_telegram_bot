@@ -22,10 +22,15 @@ class ExceptionH(ExceptionHandler):
 
 async def start(botnav: TeleBotNav, message: Message) -> None:
     logger.info(f'{message.from_user.username} {message.chat.id}')
+    username = botnav.get_user(message).username
 
-    if (ALLOWED_USER_NAMES and botnav.get_user(message).username.lower() not in ALLOWED_USER_NAMES):
-        logger.info(f'{message.from_user.username} {message.chat.id} not allowed')
-        await botnav.bot.send_message(message.chat.id, "Build your own bot here is a source code: https://github.com/Sets88/sets88_telegram_bot")
+    if (ALLOWED_USER_NAMES and (
+            not username or
+            username.lower() not in ALLOWED_USER_NAMES
+        )
+    ):
+        logger.info(f'{username} {message.chat.id} not allowed')
+        await botnav.bot.send_message(message.chat.id, "Build your own bot, here is a source code: https://github.com/Sets88/sets88_telegram_bot")
         return
 
     await botnav.print_buttons(
