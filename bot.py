@@ -12,6 +12,7 @@ import config
 import openai_module
 import replicate_module
 import youtube_dl_module
+import tools_module
 from logger import logger
 
 
@@ -39,6 +40,7 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
             '🧠 OpenAI': openai_module.start_openai if config.OPENAI_API_KEY else None,
             '💻 Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
             '📼 Youtube-DL': youtube_dl_module.start_youtube_dl,
+            'Tools': tools_module.start_tools,
         }, 'Choose',
         row_width=2
     )
