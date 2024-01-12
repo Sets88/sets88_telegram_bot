@@ -1,0 +1,11 @@
+version: "3.7"
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./uploads:/app/uploads
+    entrypoint: ["sh", "/app/entrypoint.sh"]
