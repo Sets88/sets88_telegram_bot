@@ -2,6 +2,7 @@ import json
 import asyncio
 import functools
 from datetime import datetime
+from datetime import timezone
 
 from telebot.types import Message
 
@@ -100,17 +101,19 @@ async def unixtime_handler(botnav: TeleBotNav, message: Message) -> None:
     try:
         msg = message.text.strip()
         if msg.replace(".", "").isnumeric():
-            dt = datetime.fromtimestamp(float(msg))
+            dt = datetime.utcfromtimestamp(float(msg))
             await botnav.bot.send_message(
                 message.chat.id,
-                f'Unixtime ```\n{msg}\n``` is ```\n{dt}\n```',
+                f'Unixtime ```\n{msg}\n``` UTC datetime```\n{dt}\n```',
                 parse_mode='MarkdownV2'
             )
             return
 
+        unixt = int(datetime.strptime(message.text, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp())
+
         await botnav.bot.send_message(
             message.chat.id,
-            f'Unixtime for ```\n{message.text}\n``` is ```\n{int(datetime.strptime(message.text, "%Y-%m-%d %H:%M:%S").timestamp())}\n```',
+            f'UTC datetime```\n{msg}\n``` Unixtime ```\n{unixt}\n```',
             parse_mode='MarkdownV2'
         )
     except Exception as exc:
@@ -120,7 +123,13 @@ async def unixtime_handler(botnav: TeleBotNav, message: Message) -> None:
 
 async def unixtime(botnav: TeleBotNav, message: Message) -> None:
     try:
-        await botnav.bot.send_message(message.chat.id, 'Pass unixtime to get datetime or datetime (format: YYYY-MM-DD HH:mm:ss) to get unixtime')
+        await botnav.bot.send_message(
+            message.chat.id,
+            'Pass unixtime to get datetime or datetime \(format: YYYY\-MM\-DD HH:mm:ss\) to get unixtime, \ncurrent UTC datetime' +
+            f'```\n{datetime.utcnow().replace(microsecond=0)}\n``` Unixtime' +
+            f'```\n{int(datetime.now().timestamp())}\n```',
+            parse_mode='MarkdownV2'
+        )
         await botnav.set_default_handler(message, unixtime_handler)
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
