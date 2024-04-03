@@ -36,7 +36,7 @@ DEFAULT_GPT_MODEL = 'gpt-3.5-turbo'
 
 AVAILABLE_GPT_MODELS = {
     'gpt-3.5-turbo': {},
-    'gpt-4': {
+    'gpt-4-turbo-preview': {
         'max_tokens': 4096
     },
     'gpt-3.5-turbo-16k': {
