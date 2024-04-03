@@ -2,6 +2,7 @@
     "ALLOWED_USER_NAMES": ["some_username"],
     "OPENAI_API_KEY": "****",
     "TELEGRAM_TOKEN": "****",
+    "ANTHROPIC_API_KEY": "****",
     "REPLICATE_API_KEY": "",
     "YT_DL_DIR": "/var/data/uploads",
     "YT_DL_URL": "https://somehost.com/uploads"
