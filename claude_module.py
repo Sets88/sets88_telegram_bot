@@ -1,4 +1,5 @@
 import functools
+import base64
 
 import anthropic
 from telebot.types import Message
@@ -32,11 +33,36 @@ async def claude_send_message(botnav: TeleBotNav, message: Message) -> None:
 
     conv_params = message.state_data['claude_params']
 
-    conv_params['messages'].append({
-        'role': 'user',
-        'content': message.text
-    
-    })
+    if message.content_type == 'photo':
+
+        file_info = await botnav.bot.get_file(message.photo[-1].file_id)
+        image = await botnav.bot.download_file(file_info.file_path)
+        image = base64.b64encode(image).decode('utf-8')
+
+        data = {
+            'role': 'user',
+            'content': [
+                {
+                    'type': 'image',
+                    'source': {
+                        'type': 'base64',
+                        'media_type': 'image/jpeg',
+                        'data': image
+                    }
+                }
+            ]
+        }
+        if message.caption:
+            data['content'].append({
+                'type': 'text',
+                'text': message.caption
+            })
+        conv_params['messages'].append(data)
+    if message.content_type == 'text':
+        conv_params['messages'].append({
+            'role': 'user',
+            'content': message.text
+        })
 
     stream = await claude_client.messages.create(
         max_tokens=conv_params['max_tokens'],
@@ -60,7 +86,7 @@ async def claude_send_message(botnav: TeleBotNav, message: Message) -> None:
 
     if message_parts:
         await botnav.bot.send_message(message.chat.id, "".join(message_parts))
-    
+
     conv_params['messages'].append({
         'role': 'assistant',
         'content': "".join(message_parts)
@@ -75,7 +101,7 @@ async def claude_reset_conversation(botnav: TeleBotNav, message: Message) -> Non
 async def claude_clean_conversation(botnav: TeleBotNav, message: Message) -> None:
     if 'claude_params' in message.state_data:
         message.state_data['claude_params']['messages'] = []
-        await botnav.bot.edit_message_text("Conversation messages have been cleared", message.chat.id, message.message_id)        
+        await botnav.bot.edit_message_text("Conversation messages have been cleared", message.chat.id, message.message_id)
         return
 
     await claude_reset_conversation(botnav, message)
@@ -114,10 +140,14 @@ async def claude_options_menu(botnav: TeleBotNav, message: Message) -> None:
 
 
 async def claude_message_handler(botnav: TeleBotNav, message: Message) -> None:
-    if message.content_type != 'text':
+    if message.content_type not in ('text', 'photo'):
         return
 
-    await claude_send_message(botnav, message)
+    await botnav.await_coro_sending_action(
+        message.chat.id,
+        claude_send_message(botnav, message),
+        'typing'
+    )
 
 
 async def start_claude(botnav: TeleBotNav, message: Message) -> None:
