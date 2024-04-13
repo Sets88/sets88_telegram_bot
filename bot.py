@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from telebot import ExceptionHandler
 from telebot.types import Message
@@ -12,6 +13,7 @@ import config
 import openai_module
 import replicate_module
 import youtube_dl_module
+import scheduler_module
 import tools_module
 import claude_module
 from logger import logger
@@ -43,6 +45,7 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
             '💭 Claude 3': claude_module.start_claude if config.ANTHROPIC_API_KEY else None,
             '📼 Youtube-DL': youtube_dl_module.start_youtube_dl,
             'Tools': tools_module.start_tools,
+            'Scheduled scripts': scheduler_module.start_schedules if config.SCHEDULES else None,
         }, 'Choose',
         row_width=2
     )
@@ -52,6 +55,8 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
 
 
 async def main() -> None:
+    if config.SCHEDULES:
+        await scheduler_module.manager.run(botnav)
     await botnav.send_init_commands({'start': '🏁 Start the bot'})
     await botnav.set_global_default_handler(start)
     await botnav.bot.polling()
@@ -65,4 +70,9 @@ botnav = TeleBotNav(
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as exc:
+        logger.exception(exc)
+        time.sleep(10)
+        raise exc

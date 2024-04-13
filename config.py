@@ -23,3 +23,4 @@ ANTHROPIC_API_KEY = configdata.get('ANTHROPIC_API_KEY', None)
 
 YT_DL_DIR = configdata.get('YT_DL_DIR', None)
 YT_DL_URL = configdata.get('YT_DL_URL', None)
+SCHEDULES = configdata.get('SCHEDULES', None)
