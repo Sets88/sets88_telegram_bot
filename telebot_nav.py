@@ -74,6 +74,10 @@ class TeleBotNav:
     async def set_next_handler(self, message: Message, func: Callable) -> None:
         message.state_data['next_handler'] = func
 
+    def clean_next_handler(self, message: Message) -> None:
+        if 'next_handler' in message.state_data:
+            del message.state_data['next_handler']
+
     def wipe_commands(self, message: Message, preserve: list[str] = None) -> None:
         if not preserve:
             message.state_data['commands'] = {}
@@ -148,7 +152,8 @@ class TeleBotNav:
         buttons: dict,
         text: str = "",
         message_to_rewrite: Optional[int] = None,
-        row_width: int = 1
+        row_width: int = 1,
+        parse_mode: Optional[str] = None
     ) -> None:
         markup = InlineKeyboardMarkup()
         markup.row_width = row_width
@@ -164,7 +169,7 @@ class TeleBotNav:
                 reply_markup=markup
             )
         else:
-            await self.bot.send_message(chat_id, text, reply_markup=markup)
+            await self.bot.send_message(chat_id, text, reply_markup=markup, parse_mode=parse_mode)
 
     @throttle(1)
     async def send_chat_action(self, chat_id: int, action: str) -> None:
