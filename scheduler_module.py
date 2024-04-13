@@ -151,15 +151,17 @@ class SchedulesManager:
                     executor = MetaLangExecutor(self.botnav, schedule)
                     await executor.run()
 
-                    # Just one run
-                    if schedule.interval == 0:
-                        schedule.state = 'stopped'
-                        break
-
                     await asyncio.sleep(schedule.interval)
                 except Exception as exc:
                     logger.exception(exc)
                     await asyncio.sleep(schedule.interval)
+                finally:
+                    # Just one run
+                    if schedule.interval == 0:
+                        schedule.state = 'stopped'
+                        self.save_to_file(schedule.user_id)
+                        break
+
             except Exception as exc:
                 logger.exception(exc)
                 await asyncio.sleep(120)
