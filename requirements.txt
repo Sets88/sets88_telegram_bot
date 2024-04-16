@@ -5,3 +5,4 @@ pydub
 replicate
 yt_dlp
 anthropic
+funcparserlib

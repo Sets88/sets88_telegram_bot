@@ -1,17 +1,22 @@
 import asyncio
 import os
+import operator
 from typing import Any
 from io import StringIO
 from time import time
 from collections import defaultdict
 import json
 from functools import partial
+from re import VERBOSE
 
 from telebot.types import Message
 import aiohttp
 
 from logger import logger
 from telebot_nav import TeleBotNav
+from lib.metalang_executor import MetaLangExecutor
+from lib.metalang_executor import MetalangParser
+from lib.metalang_executor import TaskExecutionError
 
 
 message_throttle_locks = {}
@@ -21,7 +26,8 @@ class ScheduleMeta:
     def __init__(self, schedule):
         self.user_id = schedule['user_id']
         self.name = schedule['name']
-        self.tasks = schedule['tasks']
+        self.code = schedule['code']
+        self.parsed_task = None
         self.interval = schedule['interval']
         self.store = schedule['store']
         self.state = schedule['state']
@@ -29,12 +35,12 @@ class ScheduleMeta:
         self.vars = {}
 
 
-class MetaLangExecutor:
+class ScheduleExecutor(MetaLangExecutor):
     COMMANDS = [
-        'http_get', 'json', 'dict_get', 'gt', 'gte', 'lt',
-        'eq', 'neq', 'set_var', 'lte', 'format', 'send_message'
+        'http_get', 'json', 'dict_get', 'get_path', 'set_store', 'get_store', 'format', 'send_message'
     ]
     def __init__(self, botnav: TeleBotNav, schedule_meta: ScheduleMeta):
+        super().__init__()
         self.schedule_meta = schedule_meta
         self.botnav = botnav
 
@@ -42,7 +48,7 @@ class MetaLangExecutor:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 if resp.status >= 400:
-                    raise Exception('Error opening url')
+                    raise TaskExecutionError(f'Error opening url {url}')
 
                 return await resp.read()
 
@@ -52,29 +58,20 @@ class MetaLangExecutor:
     async def dict_get(self, data: dict, key: str) -> Any:
         return data[key]
 
-    async def gt(self, first: Any, second: Any) -> bool:
-        return first > second
-
-    async def gte(self, first: Any, second: Any) -> bool:
-        return first >= second
-
-    async def lt(self, first: Any, second: Any) -> bool:
-        return first < second
-
-    async def eq(self, first: Any, second: Any) -> bool:
-        return first == second
-
-    async def neq(self, first: Any, second: Any) -> bool:
-        return first != second
-
-    async def lte(self, first: Any, second: Any) -> bool:
-        return first <= second
+    async def get_path(self, data: [Any], *args) -> Any:
+        val = data
+        for index in args:
+            val = val[index]
+        return val
 
     async def format(self, format: str, **kwargs) -> bool:
         return format.format(**kwargs)
 
-    async def set_var(self, key: str, value: Any) -> None:
-        self.schedule_meta.vars[key] = value
+    async def set_store(self, key: str, value: Any) -> None:
+        self.schedule_meta.store[key] = value
+
+    async def get_store(self, key: str) -> Any:
+        return self.schedule_meta.store[key]
 
     async def send_message(self, text, throttle: int|None = 10) -> None:
         key = f'{self.schedule_meta.user_id}_{self.schedule_meta.name}'
@@ -84,60 +81,6 @@ class MetaLangExecutor:
         message_throttle_locks[key] = time() + throttle
         await self.botnav.bot.send_message(self.schedule_meta.user_id, text)
 
-    def parse_params(self, command: dict) -> tuple[list, dict]:
-        args = []
-        kwargs = {}
-
-        for key, value in command.get('kwargs', {}).items():
-            if key == 'self':
-                continue
-            if 'value' in value:
-                kwargs[key] = value['value']
-            elif 'var' in value:
-                kwargs[key] = self.schedule_meta.vars.get(value['var'])
-            elif 'store' in value:
-                kwargs[key] = self.schedule_meta.store.get(value['store'])
-        
-        for value in command.get('args', []):
-            if 'value' in value:
-                args.append(value['value'])
-            elif 'var' in value:
-                args.append(self.schedule_meta.vars.get(value['var']))
-            elif 'store' in value:
-                args.append(self.schedule_meta.store.get(value['store']))
-
-        return args, kwargs
-
-    async def process_tree(self, tasks: list[dict]) -> None:
-        for command in tasks:
-            if (
-                command.get('action') not in ['call', 'test'] or
-                command.get('command') not in self.COMMANDS
-            ):
-                continue
-            elif command['action'] == 'call':
-                args, kwargs = self.parse_params(command)
-                result = await getattr(self, command['command'])(*args, **kwargs)
-
-                if 'put_into' in command:
-                    for key in command['put_into']:
-                        self.schedule_meta.vars[key] = result
-            elif command['action'] == 'test':
-                args, kwargs = self.parse_params(command)
-                result = await getattr(self, command['command'])(*args, **kwargs)
-
-                if result:
-                    await self.process_tree(command['tasks'])
-
-                if not command.get('pass_on_true'):
-                    return
-            else:
-                raise Exception('Invalid action')
-
-    async def run(self):
-        await self.process_tree(self.schedule_meta.tasks)
-
-
 
 class SchedulesManager:
     def __init__(self):
@@ -145,12 +88,19 @@ class SchedulesManager:
         self.botnav = None
 
     async def create_task(self, schedule: ScheduleMeta) -> None:
+        executor: MetaLangExecutor | None = None
+
         while True:
             try:
                 try:
-                    executor = MetaLangExecutor(self.botnav, schedule)
-                    await executor.run()
+                    if not executor:
+                        executor = ScheduleExecutor(self.botnav, schedule)
+                    await executor.run(parsed_code=schedule.parsed_task)
 
+                    await asyncio.sleep(schedule.interval)
+                except TaskExecutionError as exc:
+                    logger.exception(exc)
+                    await self.botnav.bot.send_message(schedule.user_id, f'Error: {exc}')
                     await asyncio.sleep(schedule.interval)
                 except Exception as exc:
                     logger.exception(exc)
@@ -176,7 +126,7 @@ class SchedulesManager:
                     user_id=x.user_id,
                     name=x.name,
                     interval=x.interval,
-                    tasks=x.tasks,
+                    code=x.code,
                     store=x.store,
                     state=x.state
                 ) for x in self.schedules_metas[user_id].values()],
@@ -215,6 +165,7 @@ class SchedulesManager:
 
     def add_schedule(self, user_id: int, schedule_data: dict) -> None:
         schedule = ScheduleMeta(schedule_data)
+        schedule.parsed_task = MetalangParser().parse(schedule.code)
         self.schedules_metas[user_id][schedule.name] = schedule
 
         if schedule.state == 'running':
@@ -236,12 +187,16 @@ class SchedulesManager:
                 try:
                     schedules = json.load(f)
                     for schedule_data in schedules:
-                        schedule = ScheduleMeta(schedule_data)
-                        self.schedules_metas[schedule.user_id][schedule.name] = schedule
+                        try:
+                            schedule = ScheduleMeta(schedule_data)
+                            schedule.parsed_task = MetalangParser().parse(schedule.code)
+                            self.schedules_metas[schedule.user_id][schedule.name] = schedule
 
-                        if schedule.state == 'running':
-                            schedule.task = asyncio.create_task(self.create_task(schedule))
-                        
+                            if schedule.state == 'running':
+                                schedule.task = asyncio.create_task(self.create_task(schedule))
+                        except Exception as exc:
+                            logger.exception(exc)
+                            continue
                 except Exception as exc:
                     logger.exception(exc)
                     continue
@@ -308,13 +263,13 @@ class ListSchedulesRouter:
             await botnav.bot.send_message(botnav.get_user(message).id, 'Schedule not found')
             return
 
-        config = json.dumps(schedule.tasks, indent=4)
+        config = schedule.code
 
         description = cls.format_md_schedule_description(schedule)
 
         if len(config) > 3500:
             document = StringIO(config)
-            document.filename = 'config.json'
+            document.filename = 'config.cfg'
 
             await botnav.bot.send_message(
                 botnav.get_user(message).id,
@@ -325,7 +280,7 @@ class ListSchedulesRouter:
             await botnav.bot.send_document(
                 botnav.get_user(message).id,
                 document,
-                visible_file_name=f'{schedule.name}.json'
+                visible_file_name=f'{schedule.name}.cfg'
             )
             return
 
@@ -333,7 +288,7 @@ class ListSchedulesRouter:
             botnav.get_user(message).id,
             f"""
             {description}
-            ```json\n{json.dumps(schedule.tasks, indent=4)}\n```
+            ```python\n{schedule.code}\n```
             """,
             parse_mode='MarkdownV2'
         )
@@ -538,7 +493,7 @@ class ScheduleAddRouter:
         message.state_data['new_schedule']['interval'] = int(message.text)
         await botnav.bot.send_message(
             botnav.get_user(message).id,
-            f'Interval set to {message.text},\nSend configuration JSON'
+            f'Interval set to {message.text},\nSend configuration'
         )
         await botnav.set_next_handler(message, cls.set_config)
 
@@ -552,111 +507,54 @@ class ScheduleAddRouter:
                 document = await botnav.bot.download_file(file_info.file_path)
                 text = document
 
-            message.state_data['new_schedule']['tasks'] = json.loads(text)
+            message.state_data['new_schedule']['code'] = text
+
+            manager.add_schedule(
+                botnav.get_user(message).id, {
+                    'user_id': botnav.get_user(message).id,
+                    'name': message.state_data['new_schedule']['name'],
+                    'interval': message.state_data['new_schedule']['interval'],
+                    'code': message.state_data['new_schedule']['code'],
+                    'state': 'stopped',
+                    'store': {}
+                }
+            )
         except Exception as exc:
             logger.exception(exc)
-            await botnav.bot.send_message(botnav.get_user(message).id, 'Invalid JSON')
+            await botnav.bot.send_message(botnav.get_user(message).id, 'Invalid config')
+
+            await botnav.bot.send_document(
+                botnav.get_user(message).id,
+                StringIO(message.state_data['new_schedule']['code']),
+                visible_file_name=f'{message.state_data["new_schedule"]["name"]}.cfg'
+            )
             return
 
         await botnav.bot.send_message(botnav.get_user(message).id, 'Configuration set')
-        manager.add_schedule(
-            botnav.get_user(message).id, {
-                'user_id': botnav.get_user(message).id,
-                'name': message.state_data['new_schedule']['name'],
-                'interval': message.state_data['new_schedule']['interval'],
-                'tasks': message.state_data['new_schedule']['tasks'],
-                'state': 'stopped',
-                'store': {}
-            }
-        )
         del message.state_data['new_schedule']
 
 
 async def help_schedules(botnav: TeleBotNav, message: Message) -> None:
     help = """
-    Schedules module allows you to create schedules that will run tasks at specified intervals
-    Here is the example of the configuration JSON:
-    ```json
-[
-    {
-        "action": "call",
-        "command": "http_get",
-        "args": [
-            {
-                "value": "https://example.com"
-            }
-        ],
-        "put_into": ["response"]
-    },
-    {
-        "action": "call",
-        "command": "json",
-        "args": [
-            {
-                "var": "response"
-            }
-        ],
-        "put_into": ["data"]
-    },
-    {
-        "action": "call",
-        "command": "dict_get",
-        "kwargs": {
-            "data": {
-                "var": "data"
-            },
-            "key": {
-                "value": "value"
-            }
-        },
-        "put_into": ["value"]
-    },
-    {
-        "action": "test",
-        "command": "eq",
-        "args": [
-            {
-                "var": "value"
-            },
-            {
-                "value": "example"
-            }
-        ],
-        "tasks": [
-            {
-                "action": "call",
-                "command": "format",
-                "kwargs": {
-                    "format": {
-                        "value": "Value is {res_value}"
-                    },
-                    "res_value": {
-                        "var": "value"
-                    }
-                },
-                "put_into": [
-                    "message"
-                ]
-            },
-            {
-                "action": "call",
-                "command": "send_message",
-                "args": [
-                    {
-                        "var": "message"
-                    }
-                ]
-            }
-        ]
-    }
-]
-    ```
+Schedules module allows you to create schedules that will run tasks at specified intervals
+
+Here is the example of the configuration code:
+
+```python
+price = get_path(json(
+    http_get("https://tonapi\.io/v2/rates?tokens=ton&currencies=usd")
+), "rates", "TON", "prices", "USD")
+if price > 2 {
+    message = format("TON price is {price} USD", price=price)
+    send_message(message, 1)
+}
+```
 
     This configuration will:
-    1\. Make a GET request to https://example\.com
+    1\. Make a GET request to tonapi\.io API
     2\. Parse JSON response
-    3\. Get value from the parsed JSON
-    4\. Check if the value is equal to "example"
+    3\. Get price from the parsed JSON
+    4\. Check if the price is higher then 2
     5\. If it is, format the message and send it to the user
     """
     await botnav.bot.send_message(botnav.get_user(message).id, help, parse_mode='MarkdownV2')
