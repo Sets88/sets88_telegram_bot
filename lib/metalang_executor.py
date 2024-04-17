@@ -122,21 +122,36 @@ class MetalangParser:
         return self.parser.parse(tokens)
 
 
+class Debugger:
+    def __init__(self) -> None:
+        self.messages = []
+
+    def log(self, message) -> None:
+        self.messages.append(message)
+
+
 class MetaLangExecutor:
     COMMANDS = []
 
     def __init__(self) -> None:
         self.vars = {}
+        self.debug: Debugger|None = None
 
     async def parse(self, code: str) -> None:
         parser = MetalangParser()
         return parser.parse(code)
+
+    def debug_log(self, message) -> None:
+        if self.debug:
+            self.debug.log(message)
 
     async def process_assign_command(self, task: tuple) -> None:
         key = task[1]
         val = await self.process_entity(task[2])
         
         self.vars[key] = val
+
+        self.debug_log(f'Processing assignment "{key}" = "{val}"')
 
     async def process_call_command(self, task: tuple) -> Any:
         function_name = task[1]
@@ -152,6 +167,8 @@ class MetaLangExecutor:
                 continue
             args.append(await self.process_entity(argument))
 
+        self.debug_log(f'Processing call "{function_name}" with args "{args}" and kwargs "{kwargs}"')
+
         return await getattr(self, function_name)(*args, **kwargs)
 
     async def process_command(self, task: tuple) -> Any:
@@ -163,7 +180,10 @@ class MetaLangExecutor:
 
         elif task[0] == 'comp':
             if len(task) == 2:
+                self.debug_log(f'Processing condition of "{task[1]}"')
+
                 return task[1]
+
             op_str = task[2]
             op = None
             if op_str == '>':
@@ -180,13 +200,20 @@ class MetaLangExecutor:
                 op = operator.ne
             else:
                 raise TaskExecutionError(f'Invalid comparison operator "{op_str}"')
-            return op(await self.process_entity(task[1]), await self.process_entity(task[3]))
+            entity1 = await self.process_entity(task[1])
+            entiry2 = await self.process_entity(task[3])
+
+            self.debug_log(f'Processing comparison "{entity1}" {op_str} "{entiry2}"')
+
+            return op(entity1, await self.process_entity(task[3]))
         elif task[0] == 'if':
             cond = task[1]
             if isinstance(cond, (int, float, str)):
                 cond = ('comp', cond)
 
             if await self.process_command(cond):
+                self.debug_log('If with condition is true')
+
                 await self.process_tree(task[2])
                 return
 
@@ -196,9 +223,11 @@ class MetaLangExecutor:
                     elif_cond = ('comp', elif_cond)
 
                 if await self.process_command(cond):
+                    self.debug_log('Elif with condition matched')
                     await self.process_tree(elif_statement[2])
                     return
             if task[4]:
+                self.debug_log('Else condition matched')
                 await self.process_tree(task[4][1])
                 return
 
@@ -218,6 +247,8 @@ class MetaLangExecutor:
         raise TaskExecutionError(f'Invalid entity {type(entity)}')
 
     async def process_tree(self, tasks: list[dict]) -> None:
+        self.debug_log(f'Processing tree with {len(tasks)} tasks')
+
         if isinstance(tasks, (tuple, list)):
             for command in tasks:
                 await self.process_entity(command)
@@ -225,11 +256,20 @@ class MetaLangExecutor:
     async def run(
         self,
         code: str|None = None,
-        parsed_code: list[dict]|None = None
+        parsed_code: list[dict]|None = None,
+        debug: bool = False
     ) -> None:
+        if debug:
+            self.debug = Debugger()
+        else:
+            self.debug = None
+
         if not code and not parsed_code:
             raise TaskExecutionError('No code to run')
         if code:
             parsed_code = self.parse(code)
 
         await self.process_tree(parsed_code)
+
+        if self.debug:
+            return self.debug.messages

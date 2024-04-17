@@ -32,7 +32,9 @@ class ScheduleMeta:
         self.store = schedule['store']
         self.state = schedule['state']
         self.task = None
+        self.executor = None
         self.vars = {}
+        self.debug = False
 
 
 class ScheduleExecutor(MetaLangExecutor):
@@ -43,6 +45,7 @@ class ScheduleExecutor(MetaLangExecutor):
         super().__init__()
         self.schedule_meta = schedule_meta
         self.botnav = botnav
+        self.vars = schedule_meta.vars
 
     async def http_get(self, url: str) -> bytes:
         async with aiohttp.ClientSession() as session:
@@ -88,19 +91,24 @@ class SchedulesManager:
         self.botnav = None
 
     async def create_task(self, schedule: ScheduleMeta) -> None:
-        executor: MetaLangExecutor | None = None
+        schedule.executor: MetaLangExecutor | None = None
 
         while True:
             try:
                 try:
-                    if not executor:
-                        executor = ScheduleExecutor(self.botnav, schedule)
-                    await executor.run(parsed_code=schedule.parsed_task)
+                    if not schedule.executor:
+                        schedule.executor = ScheduleExecutor(self.botnav, schedule)
+                    debug = await schedule.executor.run(
+                        parsed_code=schedule.parsed_task,
+                        debug=schedule.debug
+                    )
+                    if debug:
+                        await self.send_debug(schedule, debug)
 
                     await asyncio.sleep(schedule.interval)
                 except TaskExecutionError as exc:
                     logger.exception(exc)
-                    await self.botnav.bot.send_message(schedule.user_id, f'Error: {exc}')
+                    await self.botnav.bot.send_message(schedule.user_id, f'Error: {exc}', disable_web_page_preview=True)
                     await asyncio.sleep(schedule.interval)
                 except Exception as exc:
                     logger.exception(exc)
@@ -115,6 +123,27 @@ class SchedulesManager:
             except Exception as exc:
                 logger.exception(exc)
                 await asyncio.sleep(120)
+
+    async def send_debug(self, schedule: ScheduleMeta, debug: list[str]) -> None:
+        debug = "\n".join(debug)
+        if len(debug) > 3500:
+            document = StringIO(debug)
+            document.filename = 'config.txt'
+
+            await self.botnav.bot.send_document(
+                schedule.user_id,
+                document,
+                visible_file_name=f'{schedule.name}_debug.txt'
+            )
+            return
+
+        await self.botnav.bot.send_message(
+            schedule.user_id,
+            f"""
+            ```python\n{debug}\n```
+            """,
+            parse_mode='MarkdownV2'
+        )
 
     async def list_schedules(self, user_id) -> list[ScheduleMeta]:
         return self.schedules_metas.get(user_id, {}).values()
@@ -239,6 +268,8 @@ class ListSchedulesRouter:
         buttons = {
             'Delete': partial(cls.delete, schedule_name),
             'Stored Variables': partial(cls.stored_variables, schedule_name),
+            'Internal Variables': partial(cls.internal_variables, schedule_name),
+            'Toggle debug': partial(cls.toggle_debug, schedule_name),
             'Show Config': partial(cls.show_config, schedule_name)
         }
 
@@ -325,6 +356,36 @@ class ListSchedulesRouter:
         manager.start_schedule(botnav.get_user(message).id, schedule_name)
         await botnav.bot.delete_message(botnav.get_user(message).id, message.message_id)
         await botnav.bot.send_message(botnav.get_user(message).id, f'Schedule "{schedule_name}" started')
+
+    @classmethod
+    async def internal_variables(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
+        schedule = manager.get_schedule(botnav.get_user(message).id, schedule_name)
+
+        if not schedule:
+            await botnav.bot.send_message(botnav.get_user(message).id, f'Schedule {schedule_name} not found')
+            return
+
+        variables = cls.format_md_dict(schedule.vars)
+
+        await botnav.bot.send_message(
+            botnav.get_user(message).id,
+            f'Current variables: \n{variables}\n',
+            parse_mode='MarkdownV2')
+
+    @classmethod
+    async def toggle_debug(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
+        schedule = manager.get_schedule(botnav.get_user(message).id, schedule_name)
+
+        if not schedule:
+            await botnav.bot.send_message(botnav.get_user(message).id, f'Schedule {schedule_name} not found')
+            return
+
+        schedule.debug = not schedule.debug
+
+        await botnav.bot.send_message(
+            botnav.get_user(message).id,
+            f'Debug mode toggled to {schedule.debug}'
+        )
 
     @classmethod
     async def stored_variables(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
