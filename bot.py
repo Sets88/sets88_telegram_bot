@@ -59,7 +59,7 @@ async def main() -> None:
         await scheduler_module.manager.run(botnav)
     await botnav.send_init_commands({'start': '🏁 Start the bot'})
     await botnav.set_global_default_handler(start)
-    await botnav.bot.polling()
+    await botnav.bot.polling(non_stop=True)
 
 
 botnav = TeleBotNav(

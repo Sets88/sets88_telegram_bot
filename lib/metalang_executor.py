@@ -49,7 +49,7 @@ class MetalangParser:
         TokenSpec("name", r"[A-Za-z_][A-Za-z_0-9]*"),
         TokenSpec('op', r'[\+\-\*\,\(\)]',),
         TokenSpec('block', r'{|}',),
-        TokenSpec('comp', r'<|>|>=|<=|==|!=',),
+        TokenSpec('comp', r'>=|<=|==|!=|<|>',),
         TokenSpec('eq', r'=',),
     ]
     USEFUL = ['name', 'op', 'number', 'comp', 'eq', 'block', 'string', 'elif', 'if', 'else']
@@ -79,9 +79,15 @@ class MetalangParser:
 
         ident = name
 
-        comp_stmt = forward_decl()
+        # comp_stmt = forward_decl()
 
         call_f_stmt = forward_decl()
+
+        comp_stmt = (
+            (call_f_stmt | number | string | ident) + comp_op +
+            (call_f_stmt | number | string | ident) >> (lambda x: ('comp', x[0], x[1], x[2]))
+        )
+
         arg = comp_stmt | number | string | call_f_stmt | ident
         named_arg = ident + skip(eq) + (arg) >> (lambda x: {x[0]: x[1]})
 
@@ -98,10 +104,6 @@ class MetalangParser:
 
         call_f_stmt.define(call)
         expr = comp_stmt | call | arg
-        comp_stmt.define(
-            (call | number | string | ident) + comp_op +
-            (call | call | number | string | ident) >> (lambda x: ('comp', x[0], x[1], x[2]))
-        )
         assign = ident + skip(eq) + expr >> (lambda x: ('assign', x[0], x[1]))
         ifblock = forward_decl()
         stmt = assign | ifblock | call
@@ -201,11 +203,11 @@ class MetaLangExecutor:
             else:
                 raise TaskExecutionError(f'Invalid comparison operator "{op_str}"')
             entity1 = await self.process_entity(task[1])
-            entiry2 = await self.process_entity(task[3])
+            entity2 = await self.process_entity(task[3])
 
-            self.debug_log(f'Processing comparison "{entity1}" {op_str} "{entiry2}"')
+            self.debug_log(f'Processing comparison "{entity1}" {op_str} "{entity2}"')
 
-            return op(entity1, await self.process_entity(task[3]))
+            return op(entity1, entity2)
         elif task[0] == 'if':
             cond = task[1]
             if isinstance(cond, (int, float, str)):
@@ -222,7 +224,7 @@ class MetaLangExecutor:
                 if isinstance(cond, (int, float, str)):
                     elif_cond = ('comp', elif_cond)
 
-                if await self.process_command(cond):
+                if await self.process_command(elif_cond):
                     self.debug_log('Elif with condition matched')
                     await self.process_tree(elif_statement[2])
                     return
@@ -267,7 +269,7 @@ class MetaLangExecutor:
         if not code and not parsed_code:
             raise TaskExecutionError('No code to run')
         if code:
-            parsed_code = self.parse(code)
+            parsed_code = await self.parse(code)
 
         await self.process_tree(parsed_code)
 
