@@ -5,6 +5,7 @@ from re import VERBOSE
 from funcparserlib.parser import a
 from funcparserlib.parser import tok
 from funcparserlib.parser import many
+from funcparserlib.parser import oneplus
 from funcparserlib.parser import skip
 from funcparserlib.parser import finished
 from funcparserlib.parser import forward_decl
@@ -34,6 +35,8 @@ class MetalangParser:
         TokenSpec('elif', 'elif'),
         TokenSpec('if', 'if'),
         TokenSpec('else', 'else'),
+        TokenSpec('for', 'for'),
+        TokenSpec('in', 'in'),
         TokenSpec('space', r'[ \t\r\n]+'),
         TokenSpec("string", r'"(%(unescaped)s | %(escaped)s)*"' % regexps, VERBOSE),
         TokenSpec(
@@ -47,12 +50,15 @@ class MetalangParser:
             VERBOSE
         ),
         TokenSpec("name", r"[A-Za-z_][A-Za-z_0-9]*"),
-        TokenSpec('op', r'[\+\-\*\,\(\)]',),
+        TokenSpec('op', r'[\+\-\*\/\/\,\(\)]',),
         TokenSpec('block', r'{|}',),
         TokenSpec('comp', r'>=|<=|==|!=|<|>',),
         TokenSpec('eq', r'=',),
     ]
-    USEFUL = ['name', 'op', 'number', 'comp', 'eq', 'block', 'string', 'elif', 'if', 'else']
+    USEFUL = [
+        'name', 'op', 'number', 'comp', 'eq', 'block', 'string', 'elif', 'if', 'else',
+        'for', 'in'
+    ]
 
     def __init__(self):
         self.tokenizer = make_tokenizer(self.SPECS)
@@ -70,31 +76,34 @@ class MetalangParser:
         block = lambda s: a(Token('block', s)) >> tokval
         elif_op = tok('elif')
         if_op = tok('if')
+        for_op = tok('for')
+        in_op = tok('in')
         else_op = tok('else')
         comp_op = tok('comp')
         eq = tok('eq')
-        name = tok('name')
+        ident = tok('name')
         number = tok('number') >> make_number
         string = tok('string')
 
-        ident = name
-
-        # comp_stmt = forward_decl()
-
         call_f_stmt = forward_decl()
 
+        mat_operation = forward_decl()
+
         comp_stmt = (
-            (call_f_stmt | number | string | ident) + comp_op +
-            (call_f_stmt | number | string | ident) >> (lambda x: ('comp', x[0], x[1], x[2]))
+            (mat_operation | call_f_stmt | number | string | ident) + comp_op +
+            (mat_operation | call_f_stmt | number | string | ident) >> (lambda x: ('comp', x[0], x[1], x[2]))
         )
 
-        arg = comp_stmt | number | string | call_f_stmt | ident
-        named_arg = ident + skip(eq) + (arg) >> (lambda x: {x[0]: x[1]})
+        mat_operation_with_parentheses = forward_decl()
+
+        expr = comp_stmt | mat_operation | call_f_stmt | number | string | call_f_stmt | ident
+
+        named_arg = ident + skip(eq) + (expr) >> (lambda x: {x[0]: x[1]})
 
         arg_list = (
-            (named_arg | arg) + many(
+            (named_arg | expr) + many(
                 skip(op(',')) +
-                    (named_arg | arg)
+                    (named_arg | expr)
             )
         ) >> (lambda x: [x[0]] + x[1])
 
@@ -103,16 +112,33 @@ class MetalangParser:
         ) >> (lambda x: ('call', x[0], x[1] if len(x) > 1 else []))
 
         call_f_stmt.define(call)
-        expr = comp_stmt | call | arg
+
+        mat_operation.define(
+            (number | string | call_f_stmt | ident | mat_operation_with_parentheses) +
+            many(
+                (op('*') | op('+') | op('-') | op('/')) +
+                (number | string | call_f_stmt | ident | mat_operation_with_parentheses)
+            )  >> (lambda x: ('mat', x[0], x[1]))
+        )
+
+        mat_operation_with_parentheses.define(
+            op('(') + mat_operation + op(')') >> (lambda x: ('parentheses', x[1]))
+        )
+
         assign = ident + skip(eq) + expr >> (lambda x: ('assign', x[0], x[1]))
         ifblock = forward_decl()
-        stmt = assign | ifblock | call
+        forblock = forward_decl()
+        stmt = assign | ifblock | forblock | call
 
         ifstmt = (
             if_op + expr +
             skip(block('{')) + many(stmt) + skip(block('}')) +
             maybe(many(elif_op + expr + skip(block('{')) + many(stmt) + skip(block('}')))) +
             maybe(else_op + skip(block('{')) + many(stmt) + skip(block('}')))
+        )
+
+        forblock.define(
+            for_op + ident + skip(in_op) + expr + skip(block('{')) + many(stmt) + skip(block('}'))
         )
 
         ifblock.define(ifstmt)
@@ -172,6 +198,35 @@ class MetaLangExecutor:
         self.debug_log(f'Processing call "{function_name}" with args "{args}" and kwargs "{kwargs}"')
 
         return await getattr(self, function_name)(*args, **kwargs)
+
+    def pemdas_operation(self, ops) -> Any:
+        if len(ops) == 1:
+            return ops[0]
+        if len(ops) == 3:
+            return ops[1](ops[0], ops[2])
+
+        # First, calculate the multiplication and division
+        new_ops = []
+        i = 0
+        while i < len(ops):
+            if ops[i] in (operator.mul, operator.truediv):
+                new_ops[-1] = ops[i](new_ops[-1], ops[i + 1])
+                i += 2
+            else:
+                new_ops.append(ops[i])
+                i += 1
+        ops = new_ops
+
+        res = 0
+        # Then, calculate the addition and subtraction
+        for i, _ in enumerate(ops):
+            if i == 0:
+                res = ops[i]
+                continue
+            if ops[i] in (operator.add, operator.sub):
+                res = ops[i](res, ops[i + 1])
+
+        return res
 
     async def process_command(self, task: tuple) -> Any:
         if task[0] == 'assign':
@@ -234,6 +289,41 @@ class MetaLangExecutor:
                 return
 
             return
+        elif task[0] == 'for':
+            key = task[1]
+            iterable = await self.process_entity(task[2])
+            for item in iterable:
+                self.vars[key] = item
+                await self.process_tree(task[3])
+            return
+
+        elif task[0] == 'mat':
+            first_val = await self.process_entity(task[1])
+            debug_str = str(first_val)
+            ops = [first_val]
+            for oper in task[2]:
+                op_str, entity = oper
+
+                if op_str == '+':
+                    op = operator.add
+                elif op_str == '-':
+                    op = operator.sub
+                elif op_str == '*':
+                    op = operator.mul
+                elif op_str == '/':
+                    op = operator.truediv
+                else:
+                    raise TaskExecutionError(f'Invalid math operator "{op_str}"')
+
+                ops.append(op)
+                ops.append(await self.process_entity(entity))
+                if self.debug:
+                    debug_str += f' {op_str} {ops[-1]}'
+
+            self.debug_log(f'Processing math operation "{debug_str}"')
+            return self.pemdas_operation(ops)
+        elif task[0] == 'parentheses':
+            return await self.process_entity(task[1])
 
         raise TaskExecutionError(f'Invalid command "{task[0]}"')
 
