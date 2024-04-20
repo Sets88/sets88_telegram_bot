@@ -6,7 +6,10 @@ from lib.metalang_executor import MetaLangExecutor
 
 
 class MetaLangExecutorTest(MetaLangExecutor):
-    COMMANDS = ['return_value']
+    COMMANDS = ['return_value', 'range']
+
+    async def range(self, value) -> list:
+        return list(range(value))
 
     async def return_value(self, value, test = None, unused = None) -> str:
         if test:
@@ -70,28 +73,51 @@ class TestMetalangExecutorTest(IsolatedAsyncioTestCase):
         assert executor.vars['ne'] is True
         assert executor.vars['ne2'] is False
 
+    async def test_for(self):
+        dsl_code = """
+            value = 0
+            for i in range(5) {
+                value = value + i
+            }
+        """
+        executor = MetaLangExecutorTest()
+        await executor.run(dsl_code)
+        assert executor.vars['value'] == 10
+
+    async def test_math_ops(self):
+        dsl_code = """
+            value = 10 - (1.1 + 3.3) + -3.5 + return_value(4) * 5.1 / 8.5
+        """
+        executor = MetaLangExecutorTest()
+        await executor.run(dsl_code)
+        assert executor.vars['value'] == 4.5
 
 @mark.asyncio
 @mark.parametrize('value, field, test_value', [
     (6, 'value1', 'Test_if'),
     (11, 'value1', 'Test_if'),
     (4, 'value2', 'Test_elif'),
-    (1, 'value3', 'Test_else')
+    (1, 'value4', 'Test_else'),
+    (5, 'value1', 'Test_if'),
+    (3, 'value3', 'Test_elif')
 ])
 async def test_if(value, field, test_value):
     dsl_code = f"""
         value = {value}
-        if value > 5 {{
+        if value + 1 > 5 {{
             value1 = return_value("Test_if")
+        }}
+        elif (11 + value) * 3 == 42 {{
+            value3 = return_value("Test_elif")
         }}
         elif value > 3 {{
             value2 = return_value("Test_elif")
         }}
         else {{
-            value3 = return_value("Test_else")
+            value4 = return_value("Test_else")
         }}
     """
     executor = MetaLangExecutorTest()
-    await executor.run(dsl_code)
+    await executor.run(dsl_code, debug=True)
     assert executor.vars[field] == test_value
     assert sorted(list(executor.vars.keys())) == ['value', field]
