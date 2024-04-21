@@ -31,6 +31,7 @@ class ScheduleMeta:
         self.interval = schedule['interval']
         self.store = schedule['store']
         self.state = schedule['state']
+        self.humble_errors = schedule.get('humbe_errors', False)
         self.task = None
         self.executor = None
         self.vars = {}
@@ -108,7 +109,12 @@ class SchedulesManager:
                     await asyncio.sleep(schedule.interval)
                 except TaskExecutionError as exc:
                     logger.exception(exc)
-                    await self.botnav.bot.send_message(schedule.user_id, f'Error: {exc}', disable_web_page_preview=True)
+                    await self.botnav.bot.send_message(
+                        schedule.user_id,
+                        f'Error: {exc}',
+                        disable_web_page_preview=True,
+                        disable_notification=schedule.humble_errors
+                    )
                     await asyncio.sleep(schedule.interval)
                 except Exception as exc:
                     logger.exception(exc)
@@ -157,7 +163,8 @@ class SchedulesManager:
                     interval=x.interval,
                     code=x.code,
                     store=x.store,
-                    state=x.state
+                    state=x.state,
+                    humbe_errors=x.humble_errors
                 ) for x in self.schedules_metas[user_id].values()],
                 f
             )
@@ -237,7 +244,9 @@ class ListSchedulesRouter:
         schedule_params = {
             'name': schedule.name,
             'interval': schedule.interval if schedule.interval else 'Manual run',
-            'state': schedule.state
+            'state': schedule.state,
+            'debug': schedule.debug,
+            'humble_errors': schedule.humble_errors
         }
         return cls.format_md_dict(schedule_params)
 
@@ -270,6 +279,7 @@ class ListSchedulesRouter:
             'Stored Variables': partial(cls.stored_variables, schedule_name),
             'Internal Variables': partial(cls.internal_variables, schedule_name),
             'Toggle debug': partial(cls.toggle_debug, schedule_name),
+            'Humble errors': partial(cls.toggle_humble_errors, schedule_name),
             'Show Config': partial(cls.show_config, schedule_name)
         }
 
@@ -322,7 +332,7 @@ class ListSchedulesRouter:
                 """,
                 parse_mode='MarkdownV2'
             )
-        botnav.bot.send_message(botnav.get_user(message).id, 'Send new configuration to update')
+        await botnav.bot.send_message(botnav.get_user(message).id, 'Send new configuration to update')
         botnav.set_next_handler(message, partial(cls.update_config, schedule_name))
 
     @classmethod
@@ -395,6 +405,21 @@ class ListSchedulesRouter:
             parse_mode='MarkdownV2'
         )
         botnav.set_next_handler(message, partial(cls.set_internal_variable_name, schedule_name))
+
+    @classmethod
+    async def toggle_humble_errors(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
+        schedule = manager.get_schedule(botnav.get_user(message).id, schedule_name)
+
+        if not schedule:
+            await botnav.bot.send_message(botnav.get_user(message).id, f'Schedule {schedule_name} not found')
+            return
+
+        schedule.humble_errors = not schedule.humble_errors
+
+        await botnav.bot.send_message(
+            botnav.get_user(message).id,
+            f'Humble errors(no notification on occurred) toggled to {schedule.humble_errors}'
+        )
 
     @classmethod
     async def toggle_debug(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
@@ -651,6 +676,7 @@ class ScheduleAddRouter:
                     'interval': message.state_data['new_schedule']['interval'],
                     'code': message.state_data['new_schedule']['code'],
                     'state': 'stopped',
+                    'humbe_errors': False,
                     'store': {}
                 }
             )
