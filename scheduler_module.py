@@ -313,16 +313,38 @@ class ListSchedulesRouter:
                 document,
                 visible_file_name=f'{schedule.name}.cfg'
             )
+        else:
+            await botnav.bot.send_message(
+                botnav.get_user(message).id,
+                f"""
+                {description}
+                ```python\n{schedule.code}\n```
+                """,
+                parse_mode='MarkdownV2'
+            )
+        botnav.bot.send_message(botnav.get_user(message).id, 'Send new configuration to update')
+        botnav.set_next_handler(message, partial(cls.update_config, schedule_name))
+
+    @classmethod
+    async def update_config(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
+        schedule = manager.get_schedule(botnav.get_user(message).id, schedule_name)
+
+        if message.content_type == 'document':
+            file_info = await botnav.bot.get_file(message.document.file_id)
+            document = await botnav.bot.download_file(file_info.file_path)
+            text = document
+        else:
+            text = message.text
+
+        if not schedule:
+            await botnav.bot.send_message(botnav.get_user(message).id, 'Schedule not found')
             return
 
-        await botnav.bot.send_message(
-            botnav.get_user(message).id,
-            f"""
-            {description}
-            ```python\n{schedule.code}\n```
-            """,
-            parse_mode='MarkdownV2'
-        )
+        schedule.code = text
+        schedule.parsed_task = MetalangParser().parse(schedule.code)
+        manager.save_to_file(botnav.get_user(message).id)
+
+        await botnav.bot.send_message(botnav.get_user(message).id, 'Configuration updated')
 
     @classmethod
     async def delete(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
@@ -369,8 +391,10 @@ class ListSchedulesRouter:
 
         await botnav.bot.send_message(
             botnav.get_user(message).id,
-            f'Current variables: \n{variables}\n',
-            parse_mode='MarkdownV2')
+            f'Current variables: \n{variables}\nSend name of the variable to set',
+            parse_mode='MarkdownV2'
+        )
+        botnav.set_next_handler(message, partial(cls.set_internal_variable_name, schedule_name))
 
     @classmethod
     async def toggle_debug(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
@@ -404,7 +428,7 @@ class ListSchedulesRouter:
         botnav.set_next_handler(message, partial(cls.set_stored_variable_name, schedule_name))
 
     @classmethod
-    async def set_stored_variable_name(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
+    async def set_internal_variable_name(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
         schedule = manager.get_schedule(botnav.get_user(message).id, schedule_name)
 
         if not schedule:
@@ -412,6 +436,7 @@ class ListSchedulesRouter:
             return
 
         message.state_data['update_variable'] = {
+            'type': 'internal',
             'name': message.text
         }
 
@@ -430,7 +455,37 @@ class ListSchedulesRouter:
             botnav.get_user(message).id,
             'Send value of the variable',
         )
-        botnav.set_next_handler(message, partial(cls.set_stored_variable_value, schedule_name))
+        botnav.set_next_handler(message, partial(cls.set_variable_value, schedule_name))
+
+    @classmethod
+    async def set_stored_variable_name(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
+        schedule = manager.get_schedule(botnav.get_user(message).id, schedule_name)
+
+        if not schedule:
+            await botnav.bot.send_message(botnav.get_user(message).id, 'Schedule not found')
+            return
+
+        message.state_data['update_variable'] = {
+            'type': 'stored',
+            'name': message.text
+        }
+
+        await botnav.print_buttons(
+            botnav.get_user(message).id,
+            {
+                'int': partial(cls.coerce_variable, 'int'),
+                'str': partial(cls.coerce_variable, 'str'),
+                'float': partial(cls.coerce_variable, 'float'),
+                'Delete': partial(cls.delete_stored_variable, schedule_name, message.text)
+            },
+            'Coerce or delete',
+            row_width=2
+        )
+        await botnav.bot.send_message(
+            botnav.get_user(message).id,
+            'Send value of the variable',
+        )
+        botnav.set_next_handler(message, partial(cls.set_variable_value, schedule_name))
 
     @classmethod
     async def delete_stored_variable(cls, schedule_name: str, varname: str, botnav: TeleBotNav, message: Message) -> None:
@@ -489,7 +544,7 @@ class ListSchedulesRouter:
         return f'```ini{nl}{nl.join(lines)}{nl}```'
 
     @classmethod
-    async def set_stored_variable_value(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
+    async def set_variable_value(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
         schedule = manager.get_schedule(botnav.get_user(message).id, schedule_name)
 
         if not schedule:
@@ -498,24 +553,43 @@ class ListSchedulesRouter:
 
         varname = message.state_data['update_variable']['name']
 
-        value = cls.coerce_value(
-            message.state_data['update_variable'].get('coerce'),
-            schedule.store.get(varname),
-            message.text
-        )
+        if message.state_data['update_variable']['type'] == 'stored':
 
-        schedule.store[varname] = value
+            value = cls.coerce_value(
+                message.state_data['update_variable'].get('coerce'),
+                schedule.store.get(varname),
+                message.text
+            )
 
-        manager.save_to_file(botnav.get_user(message).id)
+            schedule.store[varname] = value
 
-        variables = cls.format_md_dict(schedule.store)
+            manager.save_to_file(botnav.get_user(message).id)
 
-        await botnav.bot.send_message(
-            botnav.get_user(message).id,
-            f'Stored variable updated:\n{variables}',
-            parse_mode='MarkdownV2'
-        )
-        del message.state_data['update_variable']
+            variables = cls.format_md_dict(schedule.store)
+
+            await botnav.bot.send_message(
+                botnav.get_user(message).id,
+                f'Stored variable updated:\n{variables}',
+                parse_mode='MarkdownV2'
+            )
+            del message.state_data['update_variable']
+        elif message.state_data['update_variable']['type'] == 'internal':
+            value = cls.coerce_value(
+                message.state_data['update_variable'].get('coerce'),
+                schedule.vars.get(varname),
+                message.text
+            )
+
+            schedule.vars[varname] = value
+
+            variables = cls.format_md_dict(schedule.vars)
+
+            await botnav.bot.send_message(
+                botnav.get_user(message).id,
+                f'Internal variable updated:\n{variables}',
+                parse_mode='MarkdownV2'
+            )
+            del message.state_data['update_variable']
 
     @classmethod
     async def coerce_variable(cls, coerce_type: str, botnav: TeleBotNav, message: Message) -> None:
