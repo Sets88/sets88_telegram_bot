@@ -363,14 +363,14 @@ class ChatGpTRouter:
         await botnav.bot.edit_message_text("Set temperature of model(0.0 - 2.0 Higher values causes model to increase"
             " randomnes in its responses)", message.chat.id, message.message_id)
 
-        await botnav.set_next_handler(message, cls.set_temperature)
+        botnav.set_next_handler(message, cls.set_temperature)
 
     @classmethod
     async def request_set_max_tokens(cls, botnav: TeleBotNav, message: Message) -> None:
         await botnav.bot.edit_message_text("Set maximum tokens in response"
             " randomnes in its responses)", message.chat.id, message.message_id)
 
-        await botnav.set_next_handler(message, cls.set_max_tokens)
+        botnav.set_next_handler(message, cls.set_max_tokens)
 
     @classmethod
     async def set_max_tokens(cls, botnav: TeleBotNav, message: Message) -> None:
@@ -397,7 +397,7 @@ class ChatGpTRouter:
     @classmethod
     async def request_set_init(cls, botnav: TeleBotNav, message: Message) -> None:
         await botnav.bot.edit_message_text("Set the description of your opponent", message.chat.id, message.message_id)
-        await botnav.set_next_handler(message, cls.set_init)
+        botnav.set_next_handler(message, cls.set_init)
 
     @classmethod
     async def clean_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
@@ -485,7 +485,8 @@ class ChatGpTRouter:
         botnav.add_command(message, 'chat_gpt_reset', '🔄 Reset conversation', cls.reset_conversation)
         botnav.add_command(message, 'chat_gpt_options', '⚙️ Chat gpt Options', cls.show_chat_options)
         await botnav.bot.send_message(message.chat.id, 'Welcome to Chat GPT, lets chat!')
-        await botnav.set_default_handler(message, cls.chat_message_handler)
+        botnav.set_default_handler(message, cls.chat_message_handler)
+        botnav.clean_next_handler(message)
         await botnav.send_commands(message)
 
 
@@ -529,7 +530,8 @@ class WhisperRouter:
     async def run(cls, botnav: TeleBotNav, message: Message) -> None:
         botnav.wipe_commands(message, preserve=['start', 'openai'])
         await botnav.bot.send_message(message.chat.id, 'Welcome to Whisper, send me voice message to transcribe!')
-        await botnav.set_default_handler(message, cls.whisper_message_handler)
+        botnav.set_default_handler(message, cls.whisper_message_handler)
+        botnav.clean_next_handler(message)
         await botnav.send_commands(message)
 
 
@@ -555,7 +557,8 @@ class DallERouter:
     async def run(cls, botnav: TeleBotNav, message: Message):
         botnav.wipe_commands(message, preserve=['start', 'openai'])
         await botnav.bot.send_message(message.chat.id, 'Welcome to DALL-E, ask me to draw something!')
-        await botnav.set_default_handler(message, cls.dalle_message_handler)
+        botnav.set_default_handler(message, cls.dalle_message_handler)
+        botnav.clean_next_handler(message)
         await botnav.send_commands(message)
 
 
@@ -600,7 +603,8 @@ class TTSRouter:
 
         botnav.wipe_commands(message, preserve=['start', 'openai'])
         await botnav.bot.send_message(message.chat.id, 'Welcome to TTS, send me text to speech!')
-        await botnav.set_default_handler(message, cls.tts_message_handler)
+        botnav.set_default_handler(message, cls.tts_message_handler)
+        botnav.clean_next_handler(message)
         await botnav.send_commands(message)
 
 

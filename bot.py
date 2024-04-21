@@ -25,6 +25,8 @@ class ExceptionH(ExceptionHandler):
 
 
 async def start(botnav: TeleBotNav, message: Message) -> None:
+    botnav.clean_default_handler(message)
+    botnav.clean_next_handler(message)
     logger.info(f'{message.from_user.username} {message.chat.id}')
     username = botnav.get_user(message).username
 

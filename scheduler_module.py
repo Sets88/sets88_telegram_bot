@@ -401,7 +401,7 @@ class ListSchedulesRouter:
             botnav.get_user(message).id,
             f'Current variables: \n{variables}\nSend name of the variable to set',
             parse_mode='MarkdownV2')
-        await botnav.set_next_handler(message, partial(cls.set_stored_variable_name, schedule_name))
+        botnav.set_next_handler(message, partial(cls.set_stored_variable_name, schedule_name))
 
     @classmethod
     async def set_stored_variable_name(cls, schedule_name: str, botnav: TeleBotNav, message: Message) -> None:
@@ -430,7 +430,7 @@ class ListSchedulesRouter:
             botnav.get_user(message).id,
             'Send value of the variable',
         )
-        await botnav.set_next_handler(message, partial(cls.set_stored_variable_value, schedule_name))
+        botnav.set_next_handler(message, partial(cls.set_stored_variable_value, schedule_name))
 
     @classmethod
     async def delete_stored_variable(cls, schedule_name: str, varname: str, botnav: TeleBotNav, message: Message) -> None:
@@ -531,7 +531,7 @@ class ScheduleAddRouter:
     @classmethod
     async def add(cls, botnav: TeleBotNav, message: Message) -> None:
         await botnav.bot.send_message(botnav.get_user(message).id, 'Send schedule name')
-        await botnav.set_next_handler(message, cls.set_name)
+        botnav.set_next_handler(message, cls.set_name)
 
     @classmethod
     async def set_name(cls, botnav: TeleBotNav, message: Message) -> None:
@@ -547,7 +547,7 @@ class ScheduleAddRouter:
             botnav.get_user(message).id,
             f'Schedule name set to {message.text},'
                 '\nSend interval in seconds or 0 for manual run')
-        await botnav.set_next_handler(message, cls.set_interval)
+        botnav.set_next_handler(message, cls.set_interval)
 
     @classmethod
     async def set_interval(cls, botnav: TeleBotNav, message: Message) -> None:
@@ -556,7 +556,7 @@ class ScheduleAddRouter:
             botnav.get_user(message).id,
             f'Interval set to {message.text},\nSend configuration'
         )
-        await botnav.set_next_handler(message, cls.set_config)
+        botnav.set_next_handler(message, cls.set_config)
 
     @classmethod
     async def set_config(cls, botnav: TeleBotNav, message: Message) -> None:

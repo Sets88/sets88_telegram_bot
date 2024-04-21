@@ -68,15 +68,19 @@ class TeleBotNav:
     async def set_global_default_handler(self, func: Callable) -> None:
         self.global_default_handler = func
 
-    async def set_default_handler(self, message: Message, func: Callable) -> None:
+    def set_default_handler(self, message: Message, func: Callable) -> None:
         message.state_data['default_handler'] = func
 
-    async def set_next_handler(self, message: Message, func: Callable) -> None:
+    def set_next_handler(self, message: Message, func: Callable) -> None:
         message.state_data['next_handler'] = func
 
     def clean_next_handler(self, message: Message) -> None:
         if 'next_handler' in message.state_data:
             del message.state_data['next_handler']
+
+    def clean_default_handler(self, message: Message) -> None:
+        if 'default_handler' in message.state_data:
+            del message.state_data['default_handler']
 
     def wipe_commands(self, message: Message, preserve: list[str] = None) -> None:
         if not preserve:

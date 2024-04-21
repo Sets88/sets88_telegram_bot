@@ -65,7 +65,8 @@ async def run_command_handler(command: str, botnav: TeleBotNav, message: Message
 async def whois(botnav: TeleBotNav, message: Message) -> None:
     try:
         await botnav.bot.send_message(message.chat.id, 'Send domain or ip address to get whois info')
-        await botnav.set_default_handler(message, functools.partial(run_command_handler, 'whois'))
+        botnav.set_default_handler(message, functools.partial(run_command_handler, 'whois'))
+        botnav.clean_next_handler(message)
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
         logger.exception(exc)
@@ -90,7 +91,8 @@ async def message_details_handler(botnav: TeleBotNav, message: Message) -> None:
 async def message_details(botnav: TeleBotNav, message: Message) -> None:
     try:
         await botnav.bot.send_message(message.chat.id, 'Forward message to get more details about it')
-        await botnav.set_default_handler(message, message_details_handler)
+        botnav.set_default_handler(message, message_details_handler)
+        botnav.clean_next_handler(message)
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
         logger.exception(exc)
@@ -130,7 +132,8 @@ async def unixtime(botnav: TeleBotNav, message: Message) -> None:
             f'```\n{int(datetime.now().timestamp())}\n```',
             parse_mode='MarkdownV2'
         )
-        await botnav.set_default_handler(message, unixtime_handler)
+        botnav.set_default_handler(message, unixtime_handler)
+        botnav.clean_next_handler(message)
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
         logger.exception(exc)
