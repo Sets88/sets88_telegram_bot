@@ -115,7 +115,7 @@ class MetalangParser:
 
         mat_operation.define(
             (number | string | call_f_stmt | ident | mat_operation_with_parentheses) +
-            many(
+            oneplus(
                 (op('*') | op('+') | op('-') | op('/')) +
                 (number | string | call_f_stmt | ident | mat_operation_with_parentheses)
             )  >> (lambda x: ('mat', x[0], x[1]))
