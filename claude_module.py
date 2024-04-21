@@ -154,7 +154,7 @@ async def claude_set_temperature_request(botnav: TeleBotNav, message: Message) -
         message.chat.id,
         f'Send text to set temperature of Claude 3, current values is ${message.state_data["claude_params"]["temperature"]}'
     )
-    await botnav.set_next_handler(message, claude_set_temperature)
+    botnav.set_next_handler(message, claude_set_temperature)
 
 
 async def claude_set_max_tokens_request(botnav: TeleBotNav, message: Message) -> None:
@@ -165,17 +165,17 @@ async def claude_set_max_tokens_request(botnav: TeleBotNav, message: Message) ->
         message.chat.id,
         f'Send text to set temperature of Claude 3, current values is ${message.state_data["claude_params"]["max_tokens"]}'
     )
-    await botnav.set_next_handler(message, claude_set_max_tokens)
+    botnav.set_next_handler(message, claude_set_max_tokens)
 
 
 async def claude_set_system_meta_request(botnav: TeleBotNav, message: Message) -> None:
     await botnav.bot.send_message(message.chat.id, "Send text to set system meta of Claude 3")
-    await botnav.set_next_handler(message, claude_set_system_meta)
+    botnav.set_next_handler(message, claude_set_system_meta)
 
 
 async def claude_put_in_the_mouth_request(botnav: TeleBotNav, message: Message) -> None:
     await botnav.bot.send_message(message.chat.id, "Send text to put in the Claude's mouth")
-    await botnav.set_next_handler(message, claude_put_in_the_mouth)
+    botnav.set_next_handler(message, claude_put_in_the_mouth)
 
 
 async def claude_switch_one_off(botnav: TeleBotNav, message: Message) -> None:
@@ -269,6 +269,5 @@ async def start_claude(botnav: TeleBotNav, message: Message) -> None:
     botnav.add_command(message, 'other_options', '⚙️ Options', claude_options_menu)
 
     await botnav.send_commands(message)
-    await botnav.set_default_handler(message, claude_message_handler)
-
-
+    botnav.set_default_handler(message, claude_message_handler)
+    botnav.clean_next_handler(message)

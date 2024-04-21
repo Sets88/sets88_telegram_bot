@@ -124,4 +124,5 @@ async def start_youtube_dl(botnav: TeleBotNav, message: Message) -> None:
     }
 
     await botnav.bot.send_message(message.chat.id, 'Welcome to Youtube download, send me links to download!')
-    await botnav.set_default_handler(message, youtube_dl_message_handler)
+    botnav.set_default_handler(message, youtube_dl_message_handler)
+    botnav.clean_next_handler(message)

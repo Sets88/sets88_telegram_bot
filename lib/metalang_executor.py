@@ -32,11 +32,11 @@ class TaskExecutionError(Exception):
 
 class MetalangParser:
     SPECS = [
-        TokenSpec('elif', 'elif'),
-        TokenSpec('if', 'if'),
-        TokenSpec('else', 'else'),
-        TokenSpec('for', 'for'),
-        TokenSpec('in', 'in'),
+        TokenSpec('elif', 'elif '),
+        TokenSpec('if', 'if '),
+        TokenSpec('else', 'else '),
+        TokenSpec('for', 'for '),
+        TokenSpec('in', 'in '),
         TokenSpec('space', r'[ \t\r\n]+'),
         TokenSpec("string", r'"(%(unescaped)s | %(escaped)s)*"' % regexps, VERBOSE),
         TokenSpec(
@@ -229,13 +229,14 @@ class MetaLangExecutor:
         return res
 
     async def process_command(self, task: tuple) -> Any:
-        if task[0] == 'assign':
+        command = task[0].strip()
+        if command == 'assign':
             return await self.process_assign_command(task)
 
-        elif task[0] == 'call':
+        elif command == 'call':
             return await self.process_call_command(task)
 
-        elif task[0] == 'comp':
+        elif command == 'comp':
             if len(task) == 2:
                 self.debug_log(f'Processing condition of "{task[1]}"')
 
@@ -263,7 +264,7 @@ class MetaLangExecutor:
             self.debug_log(f'Processing comparison "{entity1}" {op_str} "{entity2}"')
 
             return op(entity1, entity2)
-        elif task[0] == 'if':
+        elif command == 'if':
             cond = task[1]
             if isinstance(cond, (int, float, str)):
                 cond = ('comp', cond)
@@ -289,7 +290,7 @@ class MetaLangExecutor:
                 return
 
             return
-        elif task[0] == 'for':
+        elif command == 'for':
             key = task[1]
             iterable = await self.process_entity(task[2])
             for item in iterable:
@@ -297,7 +298,7 @@ class MetaLangExecutor:
                 await self.process_tree(task[3])
             return
 
-        elif task[0] == 'mat':
+        elif command == 'mat':
             first_val = await self.process_entity(task[1])
             debug_str = str(first_val)
             ops = [first_val]
@@ -322,7 +323,7 @@ class MetaLangExecutor:
 
             self.debug_log(f'Processing math operation "{debug_str}"')
             return self.pemdas_operation(ops)
-        elif task[0] == 'parentheses':
+        elif command == 'parentheses':
             return await self.process_entity(task[1])
 
         raise TaskExecutionError(f'Invalid command "{task[0]}"')

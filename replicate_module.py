@@ -330,7 +330,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
         if param.get('default'):
             text += f"or leave empty for default value ({param['default']})"
 
-        await botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
+        botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
         await botnav.bot.send_message(message.chat.id, text)
         return
 
@@ -345,7 +345,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
         if param.get('default'):
             text += f"or leave empty for default value ({param['default']})"
 
-        await botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
+        botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
         await botnav.bot.send_message(message.chat.id, text)
         return
 
@@ -356,7 +356,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
         if param.get('default'):
             text += f"or leave empty for default value ({param['default']})"
 
-        await botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
+        botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
         await botnav.bot.send_message(message.chat.id, text)
         return
 
@@ -365,7 +365,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
         if param.get('description'):
             text += f"({param['description']}) "
 
-        await botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
+        botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
         await botnav.bot.send_message(message.chat.id, text)
         return
 
@@ -547,4 +547,5 @@ async def start_replicate(botnav: TeleBotNav, message: Message) -> None:
     botnav.wipe_commands(message, preserve=['start'])
     botnav.add_command(message, 'replicate_models', '🧰 Replicate models', start_replicate)
     await botnav.send_commands(message)
-    await botnav.set_default_handler(message, replicate_message_handler)
+    botnav.set_default_handler(message, replicate_message_handler)
+    botnav.clean_next_handler(message)
