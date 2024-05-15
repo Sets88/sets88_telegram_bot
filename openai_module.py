@@ -32,17 +32,19 @@ OPENAI_OPTIONS = dict(
   presence_penalty=0.0
 )
 
-DEFAULT_GPT_MODEL = 'gpt-3.5-turbo'
+DEFAULT_GPT_MODEL = 'gpt-4o'
 
 AVAILABLE_GPT_MODELS = {
     'gpt-3.5-turbo': {},
+    'gpt-4o': {
+        'max_tokens': 4096
+    },
     'gpt-4-turbo-preview': {
         'max_tokens': 4096
     },
     'gpt-3.5-turbo-16k': {
         'max_tokens': 4096
-    },
-    'gpt-4-vision-preview': {}
+    }
 }
 
 CHAT_ROLES = {
@@ -295,9 +297,6 @@ class ChatGpTRouter:
             text = message.text
 
         if message.content_type == 'photo':
-            # As only gpt-4-vision-preview model may work with images
-            cls.switch_gpt_model('gpt-4-vision-preview', botnav, message)
-
             text = message.caption
             file_info = await botnav.bot.get_file(message.photo[-1].file_id)
             image = await botnav.bot.download_file(file_info.file_path)
