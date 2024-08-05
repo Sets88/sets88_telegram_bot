@@ -7,6 +7,7 @@ from telebot.types import Message
 from logger import logger
 import config
 from telebot_nav import TeleBotNav
+from lib.utils import MessageSplitter
 
 
 CLAUDE_MODELS = [
@@ -91,19 +92,17 @@ async def claude_send_message(botnav: TeleBotNav, message: Message) -> None:
             stream=True,
         )
 
-        full_message = []
+        message_splitter = MessageSplitter(4000)
 
         async for event in stream:
             if hasattr(event, 'delta') and hasattr(event.delta, 'text'):
-                message_parts.append(event.delta.text)
-                full_message.append(event)
+                msg = message_splitter.add(event.delta.text)
 
-            if len(message_parts) > 500:
-                await botnav.bot.send_message(message.chat.id, "".join(message_parts))
-                message_parts = []
+                if msg:
+                    await botnav.bot.send_message(message.chat.id, "".join(msg))
 
-        if message_parts:
-            await botnav.bot.send_message(message.chat.id, "".join(message_parts))
+        for msg in message_splitter.flush():
+            await botnav.bot.send_message(message.chat.id, "".join(msg))
 
         conv_params['messages'].append({
             'role': 'assistant',

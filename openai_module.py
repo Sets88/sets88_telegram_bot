@@ -19,6 +19,7 @@ from pydub import AudioSegment
 import config
 from telebot_nav import TeleBotNav
 from logger import logger
+from lib.utils import MessageSplitter
 
 
 CONV_PATH = os.path.join(os.path.dirname(__file__), "conv")
@@ -241,15 +242,15 @@ class ChatGpTRouter:
         await botnav.send_chat_action(message.chat.id, 'typing')
 
         try:
+            message_splitter = MessageSplitter(4000)
             async for reply in openai_instance.chat_get_reply(botnav.get_user(message).id, message.state_data['conversation_id']):
                 await botnav.send_chat_action(message.chat.id, 'typing')
 
-                parts.append(reply)
-
-                if len(parts) > 500:
+                msg = message_splitter.add(reply)
+                if msg:
                     await botnav.bot.send_message(message.chat.id, "".join(parts))
-                    parts = []
-            await botnav.bot.send_message(message.chat.id, "".join(parts))
+            for msg in message_splitter.flush():
+                await botnav.bot.send_message(message.chat.id, msg)
         except RateLimitError as exc:
             await botnav.bot.send_message(message.chat.id, 'OpenAi servers are overloaded, try again later')
             logger.exception(exc)
