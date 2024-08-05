@@ -10,7 +10,7 @@ class MessageSplitter:
             if index == -1:
                 index = buf.rfind(' ')
             if index == -1:
-                index = len(self.hard_limit)
+                index = self.hard_limit
             buf = buf[0:index]
             self.buffer = self.buffer[index:]
             return buf
