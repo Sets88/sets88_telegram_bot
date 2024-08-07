@@ -148,7 +148,16 @@ REPLICATE_MODELS = {
         'description': 'State-of-the-art image generation with top of the line prompt following, visual quality, image detail and output diversity.',
         'replicate_id': 'black-forest-labs/flux-pro',
         'input_type': 'text',
-        'output_type': 'photo'
+        'output_type': 'photo',
+        'available_params': {
+            'safety_tolerance': {
+                'type': 'int',
+                'default': 2,
+                'min': 1,
+                'max': 5,
+                'description': 'Safety tolerance, 1 is most strict and 5 is most permissive'
+            }
+        }
     },
     'LCM':  {
         'description': 'latent-consistency-model: Synthesizing High-Resolution Images with Few-Step Inference',
@@ -295,6 +304,9 @@ async def replicate_set_input_param(param_name: str, botnav: TeleBotNav, message
     if param['type'] == 'float':
         value = float(value)
 
+    if param['type'] == 'bool':
+        value = bool(int(value))
+
     if param['type'] == 'photo':
         file_info = await botnav.bot.get_file(message.photo[-1].file_id)
         file_content = await botnav.bot.download_file(file_info.file_path)
@@ -318,6 +330,14 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
 
     param = model['available_params'][param_name]
     await botnav.bot.delete_message(message.chat.id, message.message_id)
+
+    if param['type'] == 'bool':
+        text = "Please enter bool value 1 for True or 0 for False"
+
+        botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
+        await botnav.bot.send_message(message.chat.id, text)
+        return
+
 
     if param['type'] == 'int':
         text = "Please enter integer value "
