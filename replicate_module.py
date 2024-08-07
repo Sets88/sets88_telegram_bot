@@ -144,9 +144,9 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'openjourney': {
-        'description': 'OpenJourney, Stable Diffusion fine tuned on Midjourney v4 images.',
-        'replicate_id': 'prompthero/openjourney:9936c2001faa2194a261c01381f90e65261879985476014a0a37a334593a05eb',
+    'flux-pro': {
+        'description': 'State-of-the-art image generation with top of the line prompt following, visual quality, image detail and output diversity.',
+        'replicate_id': 'black-forest-labs/flux-pro',
         'input_type': 'text',
         'output_type': 'photo'
     },
