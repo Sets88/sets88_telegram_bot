@@ -121,7 +121,7 @@ class TeleBotNav:
         logger.info(f"{call.from_user.username} pressed: {call.data}({func_name})")
 
         # To make data appear
-        await self.bot.set_state(call.from_user.id, call.message.chat.id, '')
+        await self.bot.set_state(call.from_user.id, '', call.message.chat.id)
 
         async with self.bot.retrieve_data(call.from_user.id, call.message.chat.id) as state_data:
             call.message.state_data = state_data
@@ -129,14 +129,14 @@ class TeleBotNav:
             if call.data in self.buttons:
                 await self.buttons[call.data](self, call.message)
             elif self.global_default_handler:
-                await self.bot.set_state(call.message.chat.id, '')
+                await self.bot.set_state(call.from_user.id, '', call.message.chat.id)
                 await self.global_default_handler(self, call.message)
 
     async def message_handler(self, message: Message) -> None:
         logger.info(f"{self.get_user(message).username} sent: {message.text}")
 
         # To make data appear
-        await self.bot.set_state(message.from_user.id, message.chat.id, '')
+        await self.bot.set_state(message.from_user.id, '', message.chat.id)
 
         async with self.bot.retrieve_data(message.from_user.id, message.chat.id) as state_data:
             message.state_data = state_data
