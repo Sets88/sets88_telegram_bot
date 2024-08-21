@@ -88,7 +88,7 @@ class TeleBotNav:
             return
 
         message.state_data['commands'] = {
-            x: y for x, y in message.state_data['commands'].items() if x in preserve
+            x: y for x, y in message.state_data.get('commands', {}).items() if x in preserve
         }
 
     def add_command(self, message: Message, command: str, description: str, func: Callable) -> None:

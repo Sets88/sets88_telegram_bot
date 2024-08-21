@@ -157,7 +157,7 @@ class OpenAiAdapter():
             content.append({ "type": "text", "text": message })
 
         if image:
-            content.append({"type": "image_url", "image_url": self.encode_jpg_image(image)})
+            content.append({"type": "image_url", "image_url": {"url": self.encode_jpg_image(image)}})
 
         conv_data['messages'].append({'role': 'user', 'content': content})
 
