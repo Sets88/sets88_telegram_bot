@@ -99,9 +99,11 @@ async def claude_send_message(botnav: TeleBotNav, message: Message) -> None:
                 msg = message_splitter.add(event.delta.text)
 
                 if msg:
+                    message_parts += msg
                     await botnav.bot.send_message(message.chat.id, "".join(msg))
 
         for msg in message_splitter.flush():
+            message_parts += msg
             await botnav.bot.send_message(message.chat.id, "".join(msg))
 
         conv_params['messages'].append({
