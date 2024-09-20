@@ -1,7 +1,9 @@
 Personal Telegram bot with a wide range of capabilities:
 - Access to most OpenAi models, such as GPT, DALL-E, Whisper, TTS
+- Access to Anthropic GPT models: Claude 3 / 3.5
 - Access to replicate models, such as Stable diffusion, Kandinsky, Blip, Llama, and others
 - Ability to download videos from various video hosting platforms
+- Ability to schedule the execution of programs in a meta-language either by schedule or manually
 
 # Here are a few simple steps to set it up
 
@@ -33,3 +35,4 @@ Personal Telegram bot with a wide range of capabilities:
 ```run.sh```
 
 ![How it looks](/images/bot_screenshot.png)
+![How it looks](/images/bot_screenshot2.png)
