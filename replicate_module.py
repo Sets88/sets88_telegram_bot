@@ -6,6 +6,7 @@ from copy import copy
 
 from telebot.types import Message
 import replicate
+from replicate.helpers import FileOutput
 import aiohttp
 
 import config
@@ -85,29 +86,16 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'llama-2-70b': {
-        'description': 'A 70 billion parameter language model from Meta, fine tuned for chat completions',
-        'replicate_id': 'meta/llama-2-70b-chat:02e509c789964a7ea8736978a43525956ef40397be9033abf9fd2badfe68c9e3',
+    'nano-banana': {
+        'description': 'Gemini 2.5 Flash Image is Google’s state-of-the-art image generation and editing model',
+        'replicate_id': 'google/nano-banana',
         'input_field': 'prompt',
         'input_type': 'text',
-        'output_type': 'text',
+        'output_type': 'photo',
         'available_params': {
-            'temperature': {
-                'type': 'float',
-                'description': 'Adjusts randomness of outputs, greater than 1 is random and 0 is deterministic, 0.75',
-                'default': 1,
-                'min': 0.5,
-                'max': 1,
-            },
-            'max_new_tokens': {
-                'type': 'int',
-                'default': 128,
-                'description': 'Minimum number of tokens to generate. To disable, set to -1. A word is generally 2-3 tokens'
-            },
-            'system_prompt': {
-                'type': 'str',
-                'default': 'You are a helpful assistant',
-                'description': 'System prompt to send to the model. This is prepended to the prompt and helps guide system behavior'
+            'image_input': {
+                'type': 'photo_list',
+                'description': 'Input images'
             }
         }
     },
@@ -312,6 +300,16 @@ async def replicate_set_input_param(param_name: str, botnav: TeleBotNav, message
         file_content = await botnav.bot.download_file(file_info.file_path)
         value = BytesIO(file_content)
 
+    if param['type'] == 'photo_list':
+        if not message.state_data['replicate_params'].get(param_name):
+            message.state_data['replicate_params'][param_name] = []
+
+        value = message.state_data['replicate_params'][param_name]
+
+        file_info = await botnav.bot.get_file(message.photo[-1].file_id)
+        file_content = await botnav.bot.download_file(file_info.file_path)
+        value.append(BytesIO(file_content))
+
     message.state_data['replicate_params'][param_name] = value
     await botnav.bot.send_message(message.chat.id, f"Param {param_name} was set to: {value}")
     await replicate_print_params_buttons(botnav, message)
@@ -382,6 +380,15 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
 
     if param['type'] == 'photo':
         text = "Please send photo"
+        if param.get('description'):
+            text += f"({param['description']}) "
+
+        botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
+        await botnav.bot.send_message(message.chat.id, text)
+        return
+
+    if param['type'] == 'photo_list':
+        text = "Please send photos"
         if param.get('description'):
             text += f"({param['description']}) "
 
@@ -508,6 +515,12 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
                 await botnav.await_coro_sending_action(
                     message.chat.id,
                     botnav.bot.send_photo(message.chat.id, result),
+                    'upload_photo'
+                )
+            elif isinstance(result, FileOutput):
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_photo(message.chat.id, result.read()),
                     'upload_photo'
                 )
 
