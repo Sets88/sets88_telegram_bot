@@ -147,19 +147,16 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'LCM':  {
+    'flux-edit':  {
         'description': 'latent-consistency-model: Synthesizing High-Resolution Images with Few-Step Inference',
-        'replicate_id': 'luosiallen/latent-consistency-model:553803fd018b3cf875a8bc774c99da9b33f36647badfd88a6eec90d61c5f62fc',
+        'replicate_id': 'black-forest-labs/flux-kontext-max',
         'input_field': 'prompt',
         'input_type': 'text',
         'output_type': 'photo',
         'available_params': {
-            'num_images': {
-                'type': 'int',
-                'default': 1,
-                'min': 1,
-                'max': 5,
-                'description': 'Number of images to output'
+            'input_image': {
+                'type': 'photo',
+                'description': 'Input image'
             }
         }
     },
