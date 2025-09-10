@@ -7,6 +7,7 @@ from copy import copy
 from telebot.types import Message
 import replicate
 from replicate.helpers import FileOutput
+from replicate.exceptions import ModelError
 import aiohttp
 
 import config
@@ -558,6 +559,8 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
                         botnav.bot.send_document(message.chat.id, document, timeout=120),
                         'upload_document'
                     )
+    except ModelError as exc:
+        await botnav.bot.send_message(message.chat.id, f"Model error occurred: {exc}")
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
         logger.exception(exc)
