@@ -38,7 +38,7 @@ REPLICATE_MODELS = {
     },
     'real-esrgan': {
         'description': 'Real-ESRGAN is a GAN-based image super-resolution model trained on real-world images. It can be used to upscale images to 4x the original resolution.',
-        'replicate_id': 'nightmareai/real-esrgan:42fed1c4974146d4d2414e2be2c5277c7fcf05fcc3a73abf41610695738c1d7b',
+        'replicate_id': 'nightmareai/real-esrgan:f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa',
         'input_type': 'photo',
         'output_type': 'file',
         'available_params': {
@@ -534,7 +534,19 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
             await botnav.bot.send_message(message.chat.id, "".join(parts))
 
         if replicate_model['output_type'] == 'file':
-            if isinstance(result, list):
+            if isinstance(result, FileOutput):
+                document = await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    download_file(result.url),
+                    'upload_document'
+                )
+
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_document(message.chat.id, document, timeout=120),
+                    'upload_document'
+                )
+            elif isinstance(result, list):
                 for document_url in result:
                     document = botnav.await_coro_sending_action(
                         message.chat.id,
