@@ -11,11 +11,11 @@ from config import ALLOWED_USER_NAMES
 
 import config
 import openai_module
+import llm_module
 import replicate_module
 import youtube_dl_module
 import scheduler_module
 import tools_module
-import claude_module
 from logger import logger
 
 
@@ -43,8 +43,8 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
         message.chat.id,
         {
             '🧠 OpenAI': openai_module.start_openai if config.OPENAI_API_KEY else None,
+            '🧠 LLM': llm_module.LLMRouter.run if config.OPENAI_API_KEY or config.ANTHROPIC_API_KEY else None,
             '💻 Replicate': replicate_module.start_replicate if config.REPLICATE_API_KEY else None,
-            '💭 Claude 3': claude_module.start_claude if config.ANTHROPIC_API_KEY else None,
             '📼 Youtube-DL': youtube_dl_module.start_youtube_dl,
             'Tools': tools_module.start_tools,
             'Scheduled scripts': scheduler_module.start_schedules if config.SCHEDULES else None,

@@ -3,6 +3,8 @@ import asyncio
 import functools
 from typing import Optional
 from typing import Callable
+from typing import Any
+from typing import Coroutine
 
 from telebot import ExceptionHandler
 from telebot.async_telebot import AsyncTeleBot
@@ -65,13 +67,13 @@ class TeleBotNav:
         self.bot.register_message_handler(self.message_handler, content_types=['audio', 'photo', 'voice', 'video', 'document',
             'text', 'location', 'contact', 'sticker'])
 
-    async def set_global_default_handler(self, func: Callable) -> None:
+    async def set_global_default_handler(self, func: Callable[..., Coroutine[Any, Any, Any]]) -> None:
         self.global_default_handler = func
 
-    def set_default_handler(self, message: Message, func: Callable) -> None:
+    def set_default_handler(self, message: Message, func: Callable[..., Coroutine[Any, Any, Any]]) -> None:
         message.state_data['default_handler'] = func
 
-    def set_next_handler(self, message: Message, func: Callable) -> None:
+    def set_next_handler(self, message: Message, func: Callable[..., Coroutine[Any, Any, Any]]) -> None:
         message.state_data['next_handler'] = func
 
     def clean_next_handler(self, message: Message) -> None:
@@ -82,7 +84,7 @@ class TeleBotNav:
         if 'default_handler' in message.state_data:
             del message.state_data['default_handler']
 
-    def wipe_commands(self, message: Message, preserve: list[str] = None) -> None:
+    def wipe_commands(self, message: Message, preserve: list[str] | None = None) -> None:
         if not preserve:
             message.state_data['commands'] = {}
             return
@@ -91,7 +93,13 @@ class TeleBotNav:
             x: y for x, y in message.state_data.get('commands', {}).items() if x in preserve
         }
 
-    def add_command(self, message: Message, command: str, description: str, func: Callable) -> None:
+    def add_command(
+        self,
+        message: Message,
+        command: str,
+        description: str,
+        func: Callable[..., Coroutine[Any, Any, Any]]
+    ) -> None:
         message.state_data['commands'][command] = {
             'description': description,
             'func': func,
@@ -153,7 +161,7 @@ class TeleBotNav:
     async def print_buttons(
         self,
         chat_id: int,
-        buttons: dict,
+        buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]],
         text: str = "",
         message_to_rewrite: Optional[int] = None,
         row_width: int = 1,
@@ -179,7 +187,12 @@ class TeleBotNav:
     async def send_chat_action(self, chat_id: int, action: str) -> None:
         await self.bot.send_chat_action(chat_id, action)
 
-    async def await_coro_sending_action(self, chat_id: int, coro, action: str = 'typing') -> None:
+    async def await_coro_sending_action(
+        self,
+        chat_id: int,
+        coro: Coroutine[Any, Any, Any],
+        action: str = 'typing'
+    ) -> Any:
         task = asyncio.create_task(coro)
 
         while not task.done():

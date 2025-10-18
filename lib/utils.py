@@ -1,3 +1,8 @@
+from enum import Enum
+import json
+import dataclasses
+
+
 class MessageSplitter:
     def __init__(self, hard_limit):
         self.hard_limit = hard_limit
@@ -15,7 +20,7 @@ class MessageSplitter:
             self.buffer = self.buffer[index:]
             return buf
 
-    def add(self, message):
+    def add(self, message: str):
         self.buffer += message
         return self.get_message()
 
@@ -24,3 +29,15 @@ class MessageSplitter:
             yield message
         yield self.buffer
         self.buffer = ''
+
+
+class ConvEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if dataclasses.is_dataclass(obj):
+            return dataclasses.asdict(obj)
+        if isinstance(obj, Enum):
+            return obj.value
+        if isinstance(obj, ):
+            return [obj.real, obj.imag]
+        # Let the base class default method raise the TypeError
+        return super().default(obj)
