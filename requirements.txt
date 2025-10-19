@@ -6,3 +6,4 @@ replicate
 yt_dlp
 anthropic
 funcparserlib
+audioop-lts

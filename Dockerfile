@@ -1,11 +1,14 @@
-FROM python:3.10-alpine
+FROM python:3.13-slim
 
 WORKDIR /app
 
-COPY requirements.txt requirements.txt
+RUN apt-get update && apt-get install -y ffmpeg
 
-RUN apk add --no-cache ffmpeg \
-    && pip install --upgrade pip \
-    && pip install -r requirements.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+RUN mkdir -p /app/conv
+
+CMD ["python", "bot.py"]
