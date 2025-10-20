@@ -84,7 +84,6 @@ CHAT_ROLES = {
     'Fixer': {
         'system_prompt': 'You fix errors in everything passed to you, you respond with fixed text no explanation needed',
         'one_off': True,
-        'thinking': True,
         'model': (AIProvider.OPENAI, 'gpt-4.1'),
     }
 }
