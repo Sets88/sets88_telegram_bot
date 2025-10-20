@@ -24,8 +24,8 @@ from logger import logger
 
 
 AVAILABLE_LLM_MODELS = [
-    (AIProvider.OPENAI, 'gpt-4.1-nano'),
     (AIProvider.OPENAI, 'gpt-4.1-mini'),
+    (AIProvider.OPENAI, 'gpt-4.1-nano'),
     (AIProvider.OPENAI, 'o4-mini'),
     (AIProvider.OPENAI, 'gpt-4.1'),
     (AIProvider.OPENAI, 'gpt-5-nano'),
