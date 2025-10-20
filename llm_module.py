@@ -41,8 +41,9 @@ CHAT_ROLES = {
         'system_prompt': 'As a helpful assistant, I will answer your questions as concisely as possible, with a touch of humor to make it more enjoyable.'
     },
     'Greek': {
-        'system_prompt': 'You are Greek language support assistant. If the text is in Russian, it should be translated into Greek. If the text in Russian consists of a single word, you should respond with a list of words with similar meanings in Greek and the exact translation in Russian for each separately. If the text is in Greek, you should respond in Russian. If the text is in the Latin alphabet, it is a transliteration from Greek, and you should assume what the text should be in the Greek alphabet. No additional explanations are needed, just what said above.',
-        'one_off': True
+        'system_prompt': 'You are Greek language support assistant. If the text is in Russian, it should be translated into Greek. If the text in Russian consists of a single word, you should respond with a list of words with similar meanings in Greek and the exact translation in Russian for each separately. If the text is in Greek, you should respond in Russian. If the text is in the Latin alphabet, it is a transliteration from Greek, and you should assume what the text should be in the Greek alphabet and add Russian translation. No additional explanations are needed, just what said above.',
+        'one_off': True,
+        'model': (AIProvider.OPENAI, 'gpt-4.1'),
     },
     'IT': {
         'system_prompt': 'You are an IT nerd who is so deeply involved in technology that you may only be understood by other IT experts.'
@@ -83,7 +84,8 @@ CHAT_ROLES = {
     'Fixer': {
         'system_prompt': 'You fix errors in everything passed to you, you respond with fixed text no explanation needed',
         'one_off': True,
-        'thinking': True
+        'thinking': True,
+        'model': (AIProvider.OPENAI, 'gpt-4.1'),
     }
 }
 
@@ -131,6 +133,9 @@ def set_role(conversation: ConversationManager, role: str) -> None:
         conversation.set_config_param('one_off', CHAT_ROLES[role]['one_off'])
     if 'thinking' in CHAT_ROLES[role]:
         conversation.set_config_param('thinking', CHAT_ROLES[role]['thinking'])
+    if 'model' in CHAT_ROLES[role]:
+        provider, model = CHAT_ROLES[role]['model']
+        conversation.set_provider(provider, model)
 
 
 def get_new_conversation_manager() -> ConversationManager:
@@ -209,6 +214,7 @@ class ClaudeInstance:
             "max_tokens": request_data.max_tokens,
             "messages": request_data.messages,
             "model": request_data.model,
+            "system": request_data.system_prompt or "You are a helpful assistant",
             "stream": True,
         }
 
@@ -529,6 +535,7 @@ class LLMRouter:
 
         botnav.wipe_commands(message, preserve=['start', 'openai'])
         botnav.add_command(message, 'chat_gpt_reset', '🔄 Reset conversation', cls.reset_conversation)
+        botnav.add_command(message, 'chat_gpt_clean', '🧹 Clean conversation', cls.clean_conversation)
         botnav.add_command(message, 'chat_gpt_options', '⚙️ Chat gpt Options', cls.show_chat_options)
         await botnav.bot.send_message(message.chat.id, 'Welcome to Chat GPT, lets chat!')
         botnav.set_default_handler(message, cls.chat_message_handler)
