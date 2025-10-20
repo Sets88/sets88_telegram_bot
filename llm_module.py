@@ -450,8 +450,9 @@ class LLMRouter:
         if message.content_type == 'text' and message.text:
             text = message.text
 
-        if message.content_type == 'photo' and message.caption:
-            text = message.caption
+        if message.content_type == 'photo' and message.photo:
+            if message.caption:
+                text = message.caption
             file_info = await botnav.bot.get_file(message.photo[-1].file_id)
             image = await botnav.bot.download_file(file_info.file_path)
 
