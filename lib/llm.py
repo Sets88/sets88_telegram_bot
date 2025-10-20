@@ -97,10 +97,8 @@ class OpenAIConverter(RequestDataConverter):
                 openai_msg: dict[str, Any] = {
                     "role": msg.role.value,
                     "content": [{
-                        "type": "image_url",
-                        "image_url": {
-                            "url": msg.content
-                        }
+                        "type": "input_image",
+                        "image_url": msg.content
                     }]
                 }
 
