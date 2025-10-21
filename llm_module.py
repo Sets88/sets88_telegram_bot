@@ -1,5 +1,6 @@
 import asyncio
 import base64
+from typing import Callable, Coroutine
 import functools
 import dataclasses
 from typing import Any
@@ -25,7 +26,6 @@ from logger import logger
 
 AVAILABLE_LLM_MODELS = [
     (AIProvider.OPENAI, 'gpt-4.1-mini'),
-    (AIProvider.OPENAI, 'gpt-4.1-nano'),
     (AIProvider.OPENAI, 'o4-mini'),
     (AIProvider.OPENAI, 'gpt-4.1'),
     (AIProvider.OPENAI, 'gpt-5-nano'),
@@ -67,7 +67,9 @@ CHAT_ROLES = {
         'system_prompt': 'I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}.'
     },
     'English Translator': {
-        'system_prompt': 'I want you to act as an English translator, spelling corrector and improver. I will speak to you in any language and you will detect the language, translate it and answer in the corrected and improved version of my text, in English. I want you to replace my simplified A0-level words and sentences with more beautiful and elegant, upper level English words and sentences. Keep the meaning same, but make them more literary. I want you to only reply the correction, the improvements and nothing else, do not write explanations.'
+        'system_prompt': 'I want you to act as an English translator, spelling corrector and improver. I will speak to you in any language and you will detect the language, translate it and answer in the corrected and improved version of my text, in English. I want you to replace my simplified A0-level words and sentences with more beautiful and elegant, upper level English words and sentences. Keep the meaning same, but make them more literary. I want you to only reply the correction, the improvements and nothing else, do not write explanations. In case I speak to you in English, you will simply correct and improve my text, in English.',
+        'model': (AIProvider.OPENAI, 'gpt-4.1'),
+        'one_off': True,
     },
     'Interviewer': {
         'system_prompt': 'I want you to act as an interviewer. I will be the candidate and you will ask me the interview questions for the position position. I want you to only reply as the interviewer. Do not write all the conservation at once. I want you to only do the interview with me. Ask me the questions and wait for my answers. Do not write explanations. Ask me the questions one by one like an interviewer does and wait for my answers.',
@@ -80,6 +82,7 @@ CHAT_ROLES = {
     },
     'Assistant': {
         'system_prompt': 'You are a helpful assistant that helps people find information',
+        'model': AVAILABLE_LLM_MODELS[0]
     },
     'Fixer': {
         'system_prompt': 'You fix errors in everything passed to you, you respond with fixed text no explanation needed',
@@ -116,7 +119,7 @@ def save_conversation_to_file(user_id: int, conversation: ConversationManager) -
         os.mkdir(CONV_PATH)
     json.dump(
         dataclasses.asdict(conversation.get_request_data()),
-        open(os.path.join(CONV_PATH, f"{user_id}_{conversation.__hash__()}.json"), "w"),
+        open(os.path.join(CONV_PATH, f"{user_id}_{conversation.id}.json"), "w"),
         cls=ConvEncoder
     )
 
@@ -135,6 +138,10 @@ def set_role(conversation: ConversationManager, role: str) -> None:
     if 'model' in CHAT_ROLES[role]:
         provider, model = CHAT_ROLES[role]['model']
         conversation.set_provider(provider, model)
+    else:
+        for provider, model in get_available_models():
+            conversation.set_provider(provider, model)
+            break
 
 
 def get_new_conversation_manager() -> ConversationManager:
@@ -142,13 +149,6 @@ def get_new_conversation_manager() -> ConversationManager:
 
     set_role(manager, DEAFULT_ROLE)
     manager.set_config_param('max_tokens', DEFAULT_MAX_TOKENS)
-
-    for provider, model in get_available_models():
-        manager.set_provider(provider, model)
-        break
-
-    if not manager.current_provider:
-        raise RuntimeError("No LLM providers are configured properly.")
 
     return manager
 
@@ -289,31 +289,6 @@ class LLMRouter:
         message.state_data['delayed_message'] = not delayed_mode_enabled
 
     @classmethod
-    async def request_set_temperature(cls, botnav: TeleBotNav, message: Message) -> None:
-        await botnav.bot.edit_message_text("Set temperature of model(0.0 - 2.0 Higher values causes model to increase"
-            " randomnes in its responses)", message.chat.id, message.message_id)
-
-        botnav.set_next_handler(message, cls.set_temperature)
-
-    @classmethod
-    async def set_temperature(cls, botnav: TeleBotNav, message: Message) -> None:
-        await botnav.bot.send_message(message.chat.id, "Temperature was set to: " + message.text)
-
-        conversation = get_or_create_conversation(botnav, message)
-        try:
-            if not message.text:
-                raise ValueError()
-
-            temperature = float(message.text)
-
-            if not (0.0 <= temperature <= 2.0):
-                raise ValueError()
-            conversation.set_config_param('temperature', temperature)
-        except (ValueError, TypeError):
-            await botnav.bot.send_message(message.chat.id, "Invalid temperature value, must be between 0.0 and 2.0")
-            return
-
-    @classmethod
     async def request_set_max_tokens(cls, botnav: TeleBotNav, message: Message) -> None:
         await botnav.bot.edit_message_text("Set maximum tokens in response"
             " randomnes in its responses)", message.chat.id, message.message_id)
@@ -362,14 +337,17 @@ class LLMRouter:
 
     @classmethod
     async def show_models_list(cls, botnav: TeleBotNav, message: Message) -> str:
+        buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]] = {
+            f"{model} ({provider.value})": functools.partial(
+                cls.switch_llm_model,
+                provider, model
+            ) for provider, model in get_available_models()
+        }
+        buttons['⬅️ Back'] = cls.show_chat_options
+
         await botnav.print_buttons(
             message.chat.id,
-            {
-                f"{model} ({provider.value})": functools.partial(
-                    cls.switch_llm_model,
-                    provider, model
-                ) for provider, model in get_available_models()
-            },
+            buttons,
             message_to_rewrite=message,
             row_width=1,
         )
@@ -385,11 +363,14 @@ class LLMRouter:
 
     @classmethod
     async def show_roles_list(cls, botnav: TeleBotNav, message: Message) -> str:
+        buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]] = {
+            x: functools.partial(cls.set_role, x) for x in CHAT_ROLES.keys()
+        }
+        buttons['⬅️ Back'] = cls.show_chat_options
+
         await botnav.print_buttons(
             message.chat.id,
-            {
-                x: functools.partial(cls.set_role, x) for x in CHAT_ROLES.keys()
-            },
+            buttons,
             message_to_rewrite=message,
             row_width=2,
         )
@@ -404,8 +385,6 @@ class LLMRouter:
         conversation.set_config_param('system_prompt', CHAT_ROLES[role]['system_prompt'])
         if 'one_off' in CHAT_ROLES[role]:
             conversation.set_config_param('one_off', CHAT_ROLES[role]['one_off'])
-        if 'temperature' in CHAT_ROLES[role]:
-            conversation.set_config_param('temperature', CHAT_ROLES[role]['temperature'])
 
         role_info = f"{CHAT_ROLES[role]['system_prompt'][0:4000]}"
         await botnav.bot.send_message(message.chat.id, f'Init was set to: {role_info}')
@@ -416,8 +395,7 @@ class LLMRouter:
             message.chat.id,
             {
                 '🎯 One Off': cls.set_one_off,
-                '📤 Send on command': cls.switch_delayed_message_mode,
-                '🌡️ Temperature': cls.request_set_temperature,
+                '📤 Send upon command': cls.switch_delayed_message_mode,
                 '🔢 Max tokens': cls.request_set_max_tokens,
                 '🏁 Set system prompt': cls.request_set_system_prompt,
                 '🧹 Clean conversation': cls.clean_conversation,

@@ -163,7 +163,7 @@ class TeleBotNav:
         chat_id: int,
         buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]],
         text: str = "",
-        message_to_rewrite: Optional[int] = None,
+        message_to_rewrite: Message | None = None,
         row_width: int = 1,
         parse_mode: Optional[str] = None
     ) -> None:

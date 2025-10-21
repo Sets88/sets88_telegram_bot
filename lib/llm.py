@@ -1,3 +1,4 @@
+from time import time
 from enum import Enum
 from typing import Any
 from dataclasses import dataclass, field, replace
@@ -39,7 +40,6 @@ class UniversalMessage:
 class ConversationConfig:
     model: str
     max_tokens: int | None = None
-    temperature: float | None = 0.7
     system_prompt: str | None = None
     one_off: bool = False
     thinking: bool = False
@@ -51,7 +51,6 @@ class RequestData:
     model: str
     messages: list[dict[str, Any]]
     max_tokens: int | None
-    temperature: float | None
     system_prompt: str | None
     thinking: bool | None
 
@@ -120,10 +119,6 @@ class OpenAIConverter(RequestDataConverter):
 
         if config.max_tokens is not None:
             request_data["max_tokens"] = config.max_tokens
-
-        if config.temperature is not None:
-            request_data["temperature"] = config.temperature
-
 
         return request_data
 
@@ -204,14 +199,12 @@ class AnthropicConverter(RequestDataConverter):
         if config.max_tokens is not None:
             request_data["max_tokens"] = config.max_tokens
 
-        if config.temperature is not None:
-            request_data["temperature"] = config.temperature
-
         return request_data
 
 
 class ConversationManager:
     def __init__(self):
+        self.id = round(time())
         self.converters: dict[AIProvider, RequestDataConverter] = {
             AIProvider.OPENAI: OpenAIConverter(),
             AIProvider.ANTHROPIC: AnthropicConverter()
@@ -277,7 +270,6 @@ class ConversationManager:
             model=self.config.model,
             messages=provider_messages,
             max_tokens=self.config.max_tokens,
-            temperature=self.config.temperature,
             system_prompt=self.config.system_prompt,
             thinking=self.config.thinking
         )

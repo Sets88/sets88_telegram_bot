@@ -161,6 +161,23 @@ REPLICATE_MODELS = {
             }
         }
     },
+    'flux-m-image-edit': {
+        'description': 'An experimental FLUX Kontext model that can combine two input images',
+        'replicate_id': 'flux-kontext-apps/multi-image-kontext-max',
+        'input_type': 'text',
+        'input_field': 'prompt',
+        'output_type': 'photo',
+        'available_params': {
+            'input_image_1': {
+                'type': 'photo',
+                'description': 'Input image 1'
+            },
+            'input_image_2': {
+                'type': 'photo',
+                'description': 'Input image 2'
+            },
+        }
+    },
     'styleclip': {
         'description': 'StyleCLIP, Text-Driven Manipulation of StyleGAN Imagery',
         'replicate_id': 'orpatashnik/styleclip:7af9a66f36f97fee2fece7dcc927551a951f0022cbdd23747b9212f23fc17021',
@@ -175,19 +192,6 @@ REPLICATE_MODELS = {
             'target': {
                 'type': 'str',
                 'description': 'Target image description'
-            },
-        }
-    },
-    'controlnet-prompt': {
-        'description': 'controlnet 1.1 lineart x realistic-vision-v2.0 (updated to v5), send photo and ask to modify it',
-        'replicate_id': 'usamaehsan/controlnet-1.1-x-realistic-vision-v2.0:51778c7522eb99added82c0c52873d7a391eecf5fcc3ac7856613b7e6443f2f7',
-        'input_type': 'text',
-        'input_field': 'prompt',
-        'output_type': 'photo',
-        'available_params': {
-            'image': {
-                'type': 'photo',
-                'description': 'Input image'
             },
         }
     },
