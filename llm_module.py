@@ -18,7 +18,7 @@ from openai import RateLimitError
 from pydub import AudioSegment
 
 import config
-from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType
+from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType, Tool
 from lib.utils import MessageSplitter, ConvEncoder
 from telebot_nav import TeleBotNav
 from logger import logger
@@ -91,6 +91,12 @@ CHAT_ROLES = {
     }
 }
 
+DEFAULT_TOOLS = [
+    Tool(type='web_search', provider=AIProvider.OPENAI),
+    Tool(type='web_search_20250305', provider=AIProvider.ANTHROPIC, name='web_search', params={'max_uses': 5}),
+    # Tool(type='web_fetch_20250910', provider=AIProvider.ANTHROPIC, name='web_fetch', params={'max_uses': 5}),
+]
+
 DEFAULT_ROLE = 'Assistant'
 DEFAULT_MAX_TOKENS = 4096
 
@@ -150,6 +156,7 @@ def get_new_conversation_manager(message: Message) -> ConversationManager:
 
     set_role(message, manager, DEFAULT_ROLE)
     manager.set_config_param('max_tokens', DEFAULT_MAX_TOKENS)
+    manager.set_config_param('tools', DEFAULT_TOOLS)
 
     return manager
 
@@ -181,6 +188,7 @@ class OpenAIInstance:
             "model": request_data.model,
             "max_output_tokens": request_data.max_tokens,
             "stream": True,
+            "tools": request_data.tools,
             "user": md5(f'aaa-{user_id}-bbb'.encode('utf-8')).hexdigest()
         }
 
@@ -214,6 +222,7 @@ class ClaudeInstance:
             "max_tokens": request_data.max_tokens,
             "messages": request_data.messages,
             "model": request_data.model,
+            "tools": request_data.tools,
             "system": request_data.system_prompt or "You are a helpful assistant",
             "stream": True,
         }

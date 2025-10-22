@@ -24,6 +24,24 @@ class MessageType(Enum):
     IMAGE = "image"
 
 
+class Tool:
+    def __init__(
+        self,
+        type: str,
+        provider: AIProvider,
+        name: str | None = None,
+        description: str | None = None,
+        schema: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None
+    ):
+        self.name = name
+        self.description = description
+        self.provider = provider
+        self.type = type
+        self.schema = schema
+        self.params = params or {}
+
+
 @dataclass
 class UniversalMessage:
     id: str
@@ -43,6 +61,7 @@ class ConversationConfig:
     system_prompt: str | None = None
     one_off: bool = False
     thinking: bool = False
+    tools: list[Tool] | None = None
 
 
 @dataclass
@@ -53,6 +72,7 @@ class RequestData:
     max_tokens: int | None
     system_prompt: str | None
     thinking: bool | None
+    tools: list[dict[str, Any]] | None
 
 
 class RequestDataConverter(ABC):
@@ -66,6 +86,10 @@ class RequestDataConverter(ABC):
 
     @abstractmethod
     def message_from_provider_format(self, provider_message: dict[str, Any]) -> UniversalMessage:
+        pass
+
+    @abstractmethod
+    def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
         pass
 
     @abstractmethod
@@ -110,6 +134,25 @@ class OpenAIConverter(RequestDataConverter):
             openai_messages.append(openai_msg)
 
         return openai_messages
+
+    def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
+        tools: list[dict[str, Any]] = []
+
+        for tool in config.tools or []:
+            if tool.provider != AIProvider.OPENAI:
+                continue
+
+            tool_data: dict[str, Any] = {}
+
+            if tool.type:
+                tool_data["type"] = tool.type
+
+            if tool.params:
+                for key, value in tool.params.items():
+                    tool_data[key] = value
+
+            tools.append(tool_data)
+        return tools
 
     def make_request_data(self, config: ConversationConfig, messages: list[UniversalMessage]) -> dict[str, Any]:
         request_data: dict[str, Any] = {
@@ -189,6 +232,28 @@ class AnthropicConverter(RequestDataConverter):
             content=provider_message.get("content", "")
         )
 
+    def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
+        tools: list[dict[str, Any]] = []
+
+        for tool in config.tools or []:
+            if tool.provider != AIProvider.ANTHROPIC:
+                continue
+
+            tool_data: dict[str, Any] = {
+                "name": tool.name
+            }
+
+            if tool.type:
+                tool_data["type"] = tool.type
+
+            if tool.params:
+                for key, value in tool.params.items():
+                    tool_data[key] = value
+
+            tools.append(tool_data)
+
+        return tools
+
     def make_request_data(self, config: ConversationConfig, messages: list[UniversalMessage]) -> dict[str, Any]:
         request_data: dict[str, Any] = {
             "model": config.model,
@@ -265,11 +330,14 @@ class ConversationManager:
             self.messages
         )
 
+        tools = converter.get_tools(self.config)
+
         return RequestData(
             provider=self.current_provider,
             model=self.config.model,
             messages=provider_messages,
             max_tokens=self.config.max_tokens,
             system_prompt=self.config.system_prompt,
-            thinking=self.config.thinking
+            thinking=self.config.thinking,
+            tools=tools
         )
