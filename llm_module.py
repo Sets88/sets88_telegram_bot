@@ -91,7 +91,7 @@ CHAT_ROLES = {
     }
 }
 
-DEAFULT_ROLE = 'Assistant'
+DEFAULT_ROLE = 'Assistant'
 DEFAULT_MAX_TOKENS = 4096
 
 CONV_PATH = os.path.join(os.path.dirname(__file__), "conv")
@@ -110,7 +110,7 @@ def get_available_models() -> list[tuple[AIProvider, str]]:
 
 def get_or_create_conversation(botnav: TeleBotNav, message: Message) -> ConversationManager:
     if 'conversation' not in message.state_data:
-        message.state_data['conversation'] = get_new_conversation_manager()
+        message.state_data['conversation'] = get_new_conversation_manager(message)
     return message.state_data['conversation']
 
 
@@ -124,12 +124,13 @@ def save_conversation_to_file(user_id: int, conversation: ConversationManager) -
     )
 
 
-def set_role(conversation: ConversationManager, role: str) -> None:
+def set_role(message: Message, conversation: ConversationManager, role: str) -> None:
     if role not in CHAT_ROLES:
-        role = DEAFULT_ROLE
+        role = DEFAULT_ROLE
 
     system_prompt: str = CHAT_ROLES[role]['system_prompt']
     conversation.set_config_param('system_prompt', system_prompt)
+    message.state_data['current_role'] = role
 
     if 'one_off' in CHAT_ROLES[role]:
         conversation.set_config_param('one_off', CHAT_ROLES[role]['one_off'])
@@ -144,10 +145,10 @@ def set_role(conversation: ConversationManager, role: str) -> None:
             break
 
 
-def get_new_conversation_manager() -> ConversationManager:
+def get_new_conversation_manager(message: Message) -> ConversationManager:
     manager = ConversationManager()
 
-    set_role(manager, DEAFULT_ROLE)
+    set_role(message, manager, DEFAULT_ROLE)
     manager.set_config_param('max_tokens', DEFAULT_MAX_TOKENS)
 
     return manager
@@ -261,32 +262,28 @@ class WhisperHelper:
 class LLMRouter:
     @classmethod
     async def reset_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
-        message.state_data['conversation'] = get_new_conversation_manager()
+        message.state_data['conversation'] = get_new_conversation_manager(message)
         await botnav.bot.send_message(message.chat.id, "Conversation was reset")
 
     ## Options handlers
     @classmethod
     async def set_one_off(cls, botnav: TeleBotNav, message: Message) -> None:
         conversation = get_or_create_conversation(botnav, message)
-        conversation.set_config_param('one_off', True)
+        if conversation.config.one_off:
+            conversation.set_config_param('one_off', False)
+        else:
+            conversation.set_config_param('one_off', True)
 
-        await botnav.bot.edit_message_text(
-            'Conversation switched to single question/answer mode. '
-            'Model will forget conversation after response',
-            message.chat.id,
-            message.message_id
-        )
+        await cls.show_chat_options(botnav, message)
 
     @classmethod
     async def switch_delayed_message_mode(cls, botnav: TeleBotNav, message: Message) -> None:
-        delayed_mode_enabled = message.state_data.get('delayed_message', False)
-
-        if delayed_mode_enabled:
-            await botnav.bot.send_message(message.chat.id, "Enter text of your request, after finish push send button")
+        if not message.state_data.get('delayed_message', False):
+            message.state_data['delayed_message'] = True
         else:
-            await botnav.bot.send_message(message.chat.id, "Send on command mode disabled")
+            message.state_data['delayed_message'] = False
 
-        message.state_data['delayed_message'] = not delayed_mode_enabled
+        await cls.show_chat_options(botnav, message)
 
     @classmethod
     async def request_set_max_tokens(cls, botnav: TeleBotNav, message: Message) -> None:
@@ -297,8 +294,6 @@ class LLMRouter:
 
     @classmethod
     async def set_max_tokens(cls, botnav: TeleBotNav, message: Message) -> None:
-        await botnav.bot.send_message(message.chat.id, "Max tokens was set to: " + message.text)
-
         conversation = get_or_create_conversation(botnav, message)
         try:
             if not message.text:
@@ -310,30 +305,36 @@ class LLMRouter:
                 raise ValueError()
 
             conversation.set_config_param('max_tokens', max_tokens)
+            print(max_tokens)
+            await cls.show_chat_options(botnav, message)
         except (ValueError, TypeError):
             await botnav.bot.send_message(message.chat.id, "Invalid max tokens value, must be a positive integer")
             return
 
     @classmethod
     async def request_set_system_prompt(cls, botnav: TeleBotNav, message: Message) -> None:
-        await botnav.bot.edit_message_text("Set the description of your opponent", message.chat.id, message.message_id)
+        conversation = get_or_create_conversation(botnav, message)
+        await botnav.bot.edit_message_text(
+            f"Set the prompt of your opponent, current prompt: \n{conversation.config.system_prompt}",
+            message.chat.id,
+            message.message_id
+        )
+
         botnav.set_next_handler(message, cls.set_system_prompt)
 
     @classmethod
     async def set_system_prompt(cls, botnav: TeleBotNav, message: Message) -> None:
-        await botnav.bot.delete_message(message.chat.id, message.message_id)
-
         conversation = get_or_create_conversation(botnav, message)
         conversation.set_config_param('system_prompt', message.text)
 
-        await botnav.bot.send_message(message.chat.id, "System prompt was set to: " + message.text)
+        await cls.show_chat_options(botnav, message)
 
     @classmethod
     async def clean_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
         conversation = get_or_create_conversation(botnav, message)
         conversation.clear_conversation()
 
-        await botnav.bot.edit_message_text("Conversation was cleared", message.chat.id, message.message_id)
+        await cls.show_chat_options(botnav, message)
 
     @classmethod
     async def show_models_list(cls, botnav: TeleBotNav, message: Message) -> str:
@@ -354,12 +355,10 @@ class LLMRouter:
 
     @classmethod
     async def switch_llm_model(cls, provider: AIProvider, model: str, botnav: TeleBotNav, message: Message) -> None:
-        await botnav.bot.delete_message(message.chat.id, message.message_id)
-
         conversation = get_or_create_conversation(botnav, message)
         conversation.set_provider(provider, model)
 
-        await botnav.bot.send_message(message.chat.id, f"Model was set to: {provider.value} / {model}")
+        await cls.show_chat_options(botnav, message)
 
     @classmethod
     async def show_roles_list(cls, botnav: TeleBotNav, message: Message) -> str:
@@ -377,32 +376,38 @@ class LLMRouter:
 
     @classmethod
     async def set_role(cls, role: str, botnav: TeleBotNav, message: Message) -> None:
-        await botnav.bot.delete_message(message.chat.id, message.message_id)
-
         conversation = get_or_create_conversation(botnav, message)
-        set_role(conversation, role)
+        set_role(message, conversation, role)
 
         conversation.set_config_param('system_prompt', CHAT_ROLES[role]['system_prompt'])
         if 'one_off' in CHAT_ROLES[role]:
             conversation.set_config_param('one_off', CHAT_ROLES[role]['one_off'])
 
-        role_info = f"{CHAT_ROLES[role]['system_prompt'][0:4000]}"
-        await botnav.bot.send_message(message.chat.id, f'Init was set to: {role_info}')
+        await cls.show_chat_options(botnav, message)
 
     @classmethod
     async def show_chat_options(cls, botnav: TeleBotNav, message: Message) -> None:
+        conversation = get_or_create_conversation(botnav, message)
+        one_off_status = "✅" if conversation.config.one_off else "❌"
+        max_tokens = conversation.config.max_tokens
+        send_mode = "✅" if message.state_data.get('delayed_message', False) else "❌"
+        conversation_length = len(conversation.messages)
+        role = message.state_data.get('current_role', DEFAULT_ROLE)
+        model = conversation.config.model
+
         await botnav.print_buttons(
             message.chat.id,
             {
-                '🎯 One Off': cls.set_one_off,
-                '📤 Send upon command': cls.switch_delayed_message_mode,
-                '🔢 Max tokens': cls.request_set_max_tokens,
+                f'🎯 One Off {one_off_status}': cls.set_one_off,
+                f'📤 Send upon command {send_mode}': cls.switch_delayed_message_mode,
+                f'🔢 Max tokens({max_tokens})': cls.request_set_max_tokens,
                 '🏁 Set system prompt': cls.request_set_system_prompt,
-                '🧹 Clean conversation': cls.clean_conversation,
-                '🤖 Choose Model': cls.show_models_list,
-                '👥 Choose role': cls.show_roles_list,
+                f'🧹 Clean conversation({conversation_length})': cls.clean_conversation,
+                f'🤖 Model({model})': cls.show_models_list,
+                f'👥 Role({role})': cls.show_roles_list,
             },
-            row_width=2,
+            row_width=1,
+            message_to_rewrite=message if message.from_user.is_bot else None,
             text='Options:'
         )
 

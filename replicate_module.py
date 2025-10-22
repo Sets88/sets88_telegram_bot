@@ -178,6 +178,19 @@ REPLICATE_MODELS = {
             },
         }
     },
+    'seedream-4': {
+        'description': 'Unified text-to-image generation and precise single-sentence editing at up to 4K',
+        'replicate_id': 'bytedance/seedream-4',
+        'input_field': 'prompt',
+        'input_type': 'text',
+        'output_type': 'photo',
+        'available_params': {
+            'image_input': {
+                'type': 'photo_list',
+                'description': 'Input images'
+            }
+        }
+    },
     'styleclip': {
         'description': 'StyleCLIP, Text-Driven Manipulation of StyleGAN Imagery',
         'replicate_id': 'orpatashnik/styleclip:7af9a66f36f97fee2fece7dcc927551a951f0022cbdd23747b9212f23fc17021',
