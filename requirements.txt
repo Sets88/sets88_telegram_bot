@@ -7,3 +7,4 @@ yt_dlp
 anthropic
 funcparserlib
 audioop-lts
+ollama

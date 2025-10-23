@@ -10,6 +10,7 @@ import uuid
 class AIProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    OLLAMA = "ollama"
 
 
 class MessageRole(Enum):
@@ -174,6 +175,68 @@ class OpenAIConverter(RequestDataConverter):
             tool_call_id=provider_message.get("tool_call_id")
         )
 
+class OllamaConverter(RequestDataConverter):
+    def messages_to_provider_format(
+        self,
+        config: ConversationConfig,
+        messages: list[UniversalMessage]
+    ) -> list[dict[str, Any]]:
+        ollama_messages: list[dict[str, Any]] = []
+
+        ollama_messages.append({
+            "role": MessageRole.SYSTEM.value,
+            "content": config.system_prompt or "You are a helpful assistant"
+        })
+
+        for msg in messages:
+            ollama_msg: dict[str, Any] = {
+                "role": msg.role.value,
+                "content": msg.content
+            }
+
+            if msg.content_type == MessageType.IMAGE:
+                # Remove the "data:image/jpeg;base64," prefix if present
+                image = msg.content[msg.content.index(',') +1 :]
+
+                ollama_msg: dict[str, Any] = {
+                    "role": msg.role.value,
+                    "content": "",
+                    "images": [image]
+                }
+
+            if msg.tool_calls:
+                ollama_msg["tool_calls"] = msg.tool_calls
+
+            if msg.tool_call_id:
+                ollama_msg["tool_call_id"] = msg.tool_call_id
+
+            ollama_messages.append(ollama_msg)
+
+        return ollama_messages
+
+    def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
+        pass  # To be implemented
+
+    def make_request_data(self, config: ConversationConfig, messages: list[UniversalMessage]) -> dict[str, Any]:
+        request_data: dict[str, Any] = {
+            "model": config.model,
+            "messages": self.messages_to_provider_format(config, messages)
+        }
+
+        if config.max_tokens is not None:
+            request_data["max_tokens"] = config.max_tokens
+
+        return request_data
+
+    def message_from_provider_format(self, provider_message: dict[str, Any]) -> UniversalMessage:
+        return UniversalMessage(
+            id=str(uuid.uuid4()),
+            role=MessageRole(provider_message["role"]),
+            content=provider_message.get("content", ""),
+            tool_calls=provider_message.get("tool_calls"),
+            tool_call_id=provider_message.get("tool_call_id")
+        )
+
 
 class AnthropicConverter(RequestDataConverter):
     def messages_to_provider_format(
@@ -272,7 +335,8 @@ class ConversationManager:
         self.id = round(time())
         self.converters: dict[AIProvider, RequestDataConverter] = {
             AIProvider.OPENAI: OpenAIConverter(),
-            AIProvider.ANTHROPIC: AnthropicConverter()
+            AIProvider.ANTHROPIC: AnthropicConverter(),
+            AIProvider.OLLAMA: OllamaConverter(),
         }
         self.messages: list[UniversalMessage] = []
         self.current_provider: AIProvider | None = None

@@ -11,6 +11,7 @@ import os
 from typing import AsyncGenerator, BinaryIO
 
 import anthropic
+import ollama
 from telebot.types import Message
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent
@@ -34,6 +35,8 @@ AVAILABLE_LLM_MODELS = [
     (AIProvider.ANTHROPIC, 'claude-haiku-4-5'),
     (AIProvider.ANTHROPIC, 'claude-sonnet-4-5'),
     (AIProvider.ANTHROPIC, 'claude-opus-4-1'),
+    (AIProvider.OLLAMA, 'gpt-oss:20b'),
+    (AIProvider.OLLAMA, 'gemma3:27b'),
 ]
 
 CHAT_ROLES = {
@@ -236,6 +239,37 @@ class ClaudeInstance:
             if hasattr(event, 'delta') and hasattr(event.delta, 'text'):
                 content = event.delta.text
 
+                if content:
+                    full_response += content
+                    yield content
+
+        conversation.add_ai_response(full_response)
+        save_conversation_to_file(user_id, conversation)
+
+
+class OllamaInstance:
+    def __init__(self):
+        self.client = ollama.AsyncClient()
+
+    async def make_request(self, user_id: int, conversation: ConversationManager) -> AsyncGenerator[str, None]:
+        request_data = conversation.get_request_data()
+        full_response: str = ''
+
+        request: dict[str, Any] = {
+            "messages": request_data.messages,
+            "model": request_data.model,
+            "stream": True,
+            "tools": request_data.tools
+        }
+
+        if request_data.thinking:
+            request['reasoning'] = {'effort': 'medium'}
+
+        stream = await self.client.chat(**request)
+
+        async for event in stream:
+            if isinstance(event, ollama.ChatResponse):
+                content = event.message.content
                 if content:
                     full_response += content
                     yield content
@@ -490,6 +524,8 @@ class LLMRouter:
                 llm_gen = openai_instance.make_request(botnav.get_user(message).id, conversation)
             elif conversation.current_provider == AIProvider.ANTHROPIC:
                 llm_gen = claude_instance.make_request(botnav.get_user(message).id, conversation)
+            elif conversation.current_provider == AIProvider.OLLAMA:
+                llm_gen = ollama_instance.make_request(botnav.get_user(message).id, conversation)
 
             async for reply in llm_gen:
                 await botnav.send_chat_action(message.chat.id, 'typing')
@@ -537,3 +573,4 @@ class LLMRouter:
 
 openai_instance = OpenAIInstance()
 claude_instance = ClaudeInstance()
+ollama_instance = OllamaInstance()
