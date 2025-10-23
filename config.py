@@ -14,6 +14,7 @@ configdata = json.load(open(CONFIG_PATH, 'r'))
 
 ALLOWED_USER_NAMES = configdata['ALLOWED_USER_NAMES']
 OPENAI_API_KEY = configdata.get('OPENAI_API_KEY', None)
+OLLAMA_HOST = configdata.get('OLLAMA_HOST', None)
 
 TELEGRAM_TOKEN = configdata['TELEGRAM_TOKEN']
 

@@ -3,6 +3,7 @@
     "OPENAI_API_KEY": "****",
     "TELEGRAM_TOKEN": "****",
     "ANTHROPIC_API_KEY": "****",
+    "OLLAMA_HOST": "http://127.0.0.1:11434",
     "REPLICATE_API_KEY": "",
     "YT_DL_DIR": "/var/data/uploads",
     "YT_DL_URL": "https://somehost.com/uploads",

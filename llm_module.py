@@ -249,7 +249,7 @@ class ClaudeInstance:
 
 class OllamaInstance:
     def __init__(self):
-        self.client = ollama.AsyncClient()
+        self.client = ollama.AsyncClient(host=config.OLLAMA_HOST)
 
     async def make_request(self, user_id: int, conversation: ConversationManager) -> AsyncGenerator[str, None]:
         request_data = conversation.get_request_data()
