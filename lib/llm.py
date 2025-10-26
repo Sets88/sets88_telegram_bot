@@ -1,10 +1,21 @@
+import json
 from time import time
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
+from typing import AsyncGenerator, BinaryIO
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from abc import ABC, abstractmethod
+from hashlib import md5
 import uuid
+
+import anthropic
+import ollama
+from openai import AsyncOpenAI
+from openai.types.responses import ResponseTextDeltaEvent, ResponseFunctionToolCall, ResponseOutputItemAddedEvent
+
+import config
+from logger import logger
 
 
 class AIProvider(Enum):
@@ -23,57 +34,58 @@ class MessageRole(Enum):
 class MessageType(Enum):
     TEXT = "text"
     IMAGE = "image"
+    TOOL_USE = "tool_use"
+    TOOL_RESULT = "tool_result"
 
 
+@dataclass
+class LLMModel:
+    provider: AIProvider
+    name: str
+    thinking_supported: bool
+    tool_calling_supported: bool
+    image_input_supported: bool
+
+
+@dataclass
 class Tool:
-    def __init__(
-        self,
-        type: str,
-        provider: AIProvider,
-        name: str | None = None,
-        description: str | None = None,
-        schema: dict[str, Any] | None = None,
-        params: dict[str, Any] | None = None
-    ):
+    type: str
+    providers: list[AIProvider]
+    name: str | None = None
+    function: Callable | None = None,
+    description: str | None = None,
+    schema: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None
+
+
+class ToolParameters:
+    def __init__(self, name: str, description: str, ptype: type = str, required: bool = False):
         self.name = name
         self.description = description
-        self.provider = provider
-        self.type = type
-        self.schema = schema
-        self.params = params or {}
+        self.ptype = ptype
+        self.required = required
 
 
 @dataclass
 class UniversalMessage:
     id: str
     role: MessageRole
-    content: str | bytes
+    content: Any
     content_type: MessageType = MessageType.TEXT
     timestamp: datetime = field(default_factory=datetime.now)
-    tool_calls: list[dict[str, Any]] | None = None
+    tool_name: str | None = None
     tool_call_id: str | None = None
-    metadata: dict[str, Any] | None = None
+    tool_call_params: dict[str, Any] | None = None
 
 
 @dataclass
 class ConversationConfig:
-    model: str
+    model: LLMModel | None = None
     max_tokens: int | None = None
     system_prompt: str | None = None
     one_off: bool = False
     thinking: bool = False
     tools: list[Tool] | None = None
-
-
-@dataclass
-class RequestData:
-    provider: AIProvider
-    model: str
-    messages: list[dict[str, Any]]
-    max_tokens: int | None
-    system_prompt: str | None
-    thinking: bool | None
-    tools: list[dict[str, Any]] | None
 
 
 class RequestDataConverter(ABC):
@@ -86,15 +98,11 @@ class RequestDataConverter(ABC):
         pass
 
     @abstractmethod
-    def message_from_provider_format(self, provider_message: dict[str, Any]) -> UniversalMessage:
-        pass
-
-    @abstractmethod
     def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
         pass
 
     @abstractmethod
-    def make_request_data(self, config: ConversationConfig, messages: list[UniversalMessage]) -> dict[str, Any]:
+    def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
         pass
 
 
@@ -104,21 +112,24 @@ class OpenAIConverter(RequestDataConverter):
         config: ConversationConfig,
         messages: list[UniversalMessage]
     ) -> list[dict[str, Any]]:
-        openai_messages: list[dict[str, Any]] = []
+        result_message: list[dict[str, Any]] = []
 
-        openai_messages.append({
+        result_message.append({
             "role": MessageRole.SYSTEM.value,
             "content": config.system_prompt or "You are a helpful assistant"
         })
 
         for msg in messages:
-            openai_msg: dict[str, Any] = {
-                "role": msg.role.value,
-                "content": msg.content
-            }
+            message: dict[str, Any] | None = None
 
-            if msg.content_type == MessageType.IMAGE:
-                openai_msg: dict[str, Any] = {
+            if msg.content_type == MessageType.TEXT:
+                message = {
+                    "role": msg.role.value,
+                    "content": msg.content
+                }
+
+            elif msg.content_type == MessageType.IMAGE and config.model.image_input_supported:
+                message = {
                     "role": msg.role.value,
                     "content": [{
                         "type": "input_image",
@@ -126,27 +137,45 @@ class OpenAIConverter(RequestDataConverter):
                     }]
                 }
 
-            if msg.tool_calls:
-                openai_msg["tool_calls"] = msg.tool_calls
+            elif msg.content_type == MessageType.TOOL_USE and config.model.tool_calling_supported:
+                message = {
+                    "type": "function_call",
+                    "call_id": msg.tool_call_id,
+                    "name": msg.tool_name,
+                    "arguments": json.dumps(msg.tool_call_params)
+                }
 
-            if msg.tool_call_id:
-                openai_msg["tool_call_id"] = msg.tool_call_id
+            if msg.content_type == MessageType.TOOL_RESULT and config.model.tool_calling_supported:
+                message = {
+                    "type": "function_call_output",
+                    "call_id": msg.tool_call_id,
+                    "output": msg.content
+                }
 
-            openai_messages.append(openai_msg)
+            if message:
+                result_message.append(message)
 
-        return openai_messages
+        return result_message
 
     def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
+        if not config.model or not config.model.tool_calling_supported:
+            return None
+
         tools: list[dict[str, Any]] = []
 
         for tool in config.tools or []:
-            if tool.provider != AIProvider.OPENAI:
+            if AIProvider.OPENAI not in tool.providers:
                 continue
 
             tool_data: dict[str, Any] = {}
 
             if tool.type:
                 tool_data["type"] = tool.type
+
+            if tool.type == 'function':
+                tool_data['name'] = tool.name
+                tool_data["parameters"] = tool.schema
+                tool_data["description"] = tool.description
 
             if tool.params:
                 for key, value in tool.params.items():
@@ -155,25 +184,31 @@ class OpenAIConverter(RequestDataConverter):
             tools.append(tool_data)
         return tools
 
-    def make_request_data(self, config: ConversationConfig, messages: list[UniversalMessage]) -> dict[str, Any]:
+    def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
+        provider_messages: list[dict[str, Any]] = self.messages_to_provider_format(
+            conversation.config,
+            conversation.messages
+        )
+
         request_data: dict[str, Any] = {
-            "model": config.model,
-            "messages": self.messages_to_provider_format(config, messages)
+            "model": conversation.config.model.name,
+            "input": provider_messages,
+            "max_output_tokens": conversation.config.max_tokens,
+            "stream": True
         }
 
-        if config.max_tokens is not None:
-            request_data["max_tokens"] = config.max_tokens
+        if conversation.config.model.tool_calling_supported:
+            tools = self.get_tools(conversation.config)
+            request_data["tools"] = tools
+
+        if conversation.user_id:
+            request_data["user"] = md5(f'aaa-{conversation.user_id}-bbb'.encode('utf-8')).hexdigest()
+
+        if conversation.config.thinking and conversation.config.model.thinking_supported:
+            request_data['reasoning'] = {'effort': 'medium'}
 
         return request_data
 
-    def message_from_provider_format(self, provider_message: dict[str, Any]) -> UniversalMessage:
-        return UniversalMessage(
-            id=str(uuid.uuid4()),
-            role=MessageRole(provider_message["role"]),
-            content=provider_message.get("content", ""),
-            tool_calls=provider_message.get("tool_calls"),
-            tool_call_id=provider_message.get("tool_call_id")
-        )
 
 class OllamaConverter(RequestDataConverter):
     def messages_to_provider_format(
@@ -181,61 +216,94 @@ class OllamaConverter(RequestDataConverter):
         config: ConversationConfig,
         messages: list[UniversalMessage]
     ) -> list[dict[str, Any]]:
-        ollama_messages: list[dict[str, Any]] = []
+        result_messages: list[dict[str, Any]] = []
 
-        ollama_messages.append({
+        result_messages.append({
             "role": MessageRole.SYSTEM.value,
             "content": config.system_prompt or "You are a helpful assistant"
         })
 
         for msg in messages:
-            ollama_msg: dict[str, Any] = {
-                "role": msg.role.value,
-                "content": msg.content
-            }
+            if msg.content_type == MessageType.TEXT:
+                result_messages.append({
+                    "role": msg.role.value,
+                    "content": msg.content
+                })
 
-            if msg.content_type == MessageType.IMAGE:
+            elif msg.content_type == MessageType.IMAGE and config.model.image_input_supported:
                 # Remove the "data:image/jpeg;base64," prefix if present
                 image = msg.content[msg.content.index(',') +1 :]
 
-                ollama_msg: dict[str, Any] = {
+                result_messages.append({
                     "role": msg.role.value,
                     "content": "",
                     "images": [image]
-                }
+                })
 
-            if msg.tool_calls:
-                ollama_msg["tool_calls"] = msg.tool_calls
+            elif msg.content_type == MessageType.TOOL_USE and config.model.tool_calling_supported:
+                result_messages.append({
+                    "role": MessageRole.ASSISTANT.value,
+                    "content": "",
+                    "tool_use": {
+                        "name": msg.tool_name,
+                        "input": msg.tool_call_params or {}
+                    }
+                })
 
-            if msg.tool_call_id:
-                ollama_msg["tool_call_id"] = msg.tool_call_id
+            elif msg.content_type == MessageType.TOOL_RESULT and config.model.tool_calling_supported:
+                result_messages.append({
+                    "role": MessageRole.TOOL.value,
+                    "content": msg.content,
+                    "tool_name": msg.tool_name,
+                })
 
-            ollama_messages.append(ollama_msg)
-
-        return ollama_messages
+        return result_messages
 
     def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
-        pass  # To be implemented
+        tools: list[dict[str, Any]] = []
 
-    def make_request_data(self, config: ConversationConfig, messages: list[UniversalMessage]) -> dict[str, Any]:
+        for tool in config.tools or []:
+            if AIProvider.OLLAMA not in tool.providers:
+                continue
+
+            tool_data: dict[str, Any] = {}
+
+            if tool.type:
+                tool_data["type"] = tool.type
+
+            if tool.type == 'function':
+                tool_data['function'] = {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.schema
+                }
+                tool_data['name'] = tool.name
+                tool_data["parameters"] = tool.schema
+                tool_data["description"] = tool.description
+
+            tools.append(tool_data)
+        return tools
+
+    def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
+        provider_messages: list[dict[str, Any]] = self.messages_to_provider_format(
+            conversation.config,
+            conversation.messages
+        )
+
         request_data: dict[str, Any] = {
-            "model": config.model,
-            "messages": self.messages_to_provider_format(config, messages)
+            "messages": provider_messages,
+            "model": conversation.config.model.name,
+            "stream": True
         }
 
-        if config.max_tokens is not None:
-            request_data["max_tokens"] = config.max_tokens
+        if conversation.config.model.tool_calling_supported:
+            tools = self.get_tools(conversation.config)
+            request_data["tools"] = tools
+
+        if not conversation.config.thinking:
+            request_data['think'] = False
 
         return request_data
-
-    def message_from_provider_format(self, provider_message: dict[str, Any]) -> UniversalMessage:
-        return UniversalMessage(
-            id=str(uuid.uuid4()),
-            role=MessageRole(provider_message["role"]),
-            content=provider_message.get("content", ""),
-            tool_calls=provider_message.get("tool_calls"),
-            tool_call_id=provider_message.get("tool_call_id")
-        )
 
 
 class AnthropicConverter(RequestDataConverter):
@@ -244,70 +312,90 @@ class AnthropicConverter(RequestDataConverter):
         config: ConversationConfig,
         messages: list[UniversalMessage]
     ) -> list[dict[str, Any]]:
-        anthropic_messages: list[dict[str, Any]] = []
+        result_messages: list[dict[str, Any]] = []
 
         for msg in messages:
-            if msg.role in [MessageRole.USER, MessageRole.ASSISTANT]:
-                if msg.content_type == MessageType.TEXT:
-                    anthropic_msg: dict[str, Any] = {
-                        "role": msg.role.value,
-                        "content": msg.content
-                    }
-                elif msg.content_type == MessageType.IMAGE:
-                    # Remove the "data:image/jpeg;base64," prefix if present
-                    image = msg.content[msg.content.index(',') +1 :]
-                    anthropic_msg: dict[str, Any] = {
-                        "role": msg.role.value,
-                        "content": [
-                            {
-                                'type': 'image',
-                                'source': {
-                                    'type': 'base64',
-                                    'media_type': 'image/jpeg',
-                                    'data': image
-                                }
+            if msg.content_type == MessageType.TEXT:
+                result_messages.append({
+                    "role": msg.role.value,
+                    "content": msg.content
+                })
+            elif msg.content_type == MessageType.IMAGE and config.model.image_input_supported:
+                # Remove the "data:image/jpeg;base64," prefix if present
+                image = msg.content[msg.content.index(',') +1 :]
+                result_messages.append({
+                    "role": msg.role.value,
+                    "content": [
+                        {
+                            'type': 'image',
+                            'source': {
+                                'type': 'base64',
+                                'media_type': 'image/jpeg',
+                                'data': image
                             }
-                        ]
-                    }
-
-                anthropic_messages.append(anthropic_msg)
-            elif msg.role == MessageRole.TOOL:
-                # Для Anthropic tool responses обрабатываются по-особому
-                anthropic_messages.append({
-                    "role": "user",
-                    "content": f"Tool result: {msg.content}"
+                        }
+                    ]
+                })
+            elif msg.content_type == MessageType.TOOL_USE and config.model.tool_calling_supported:
+                result_messages.append({
+                    "role": MessageRole.ASSISTANT.value,
+                    "content": [
+                        {
+                            "id": msg.tool_call_id,
+                            "input": msg.tool_call_params or {},
+                            "name": msg.tool_name,
+                            "type": "tool_use"
+                        }
+                    ]
+                })
+            elif msg.content_type == MessageType.TOOL_RESULT and config.model.tool_calling_supported:
+                result_messages.append({
+                    "role": MessageRole.USER.value,
+                    "content": [
+                        {
+                            "tool_use_id": msg.tool_call_id,
+                            "content": msg.content,
+                            "type": "tool_result"
+                        }
+                    ]
                 })
 
-                anthropic_messages.append(anthropic_msg)
-            elif msg.role == MessageRole.TOOL:
-                # Для Anthropic tool responses обрабатываются по-особому
-                anthropic_messages.append({
-                    "role": "user",
-                    "content": f"Tool result: {msg.content}"
-                })
+        return result_messages
 
-        return anthropic_messages
+    def get_schema(self, tool: Tool) -> dict[str, Any]:
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
 
-    def message_from_provider_format(self, provider_message: dict[str, Any]) -> UniversalMessage:
-        return UniversalMessage(
-            id=str(uuid.uuid4()),
-            role=MessageRole(provider_message["role"]),
-            content=provider_message.get("content", "")
-        )
+        if not tool.schema:
+            return schema
+
+        for key, value in tool.schema.items():
+            schema["properties"][key] = value
+            schema["required"].append(key)
+
+        return schema
 
     def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
         tools: list[dict[str, Any]] = []
 
         for tool in config.tools or []:
-            if tool.provider != AIProvider.ANTHROPIC:
+            if AIProvider.ANTHROPIC not in tool.providers:
                 continue
 
             tool_data: dict[str, Any] = {
                 "name": tool.name
             }
 
-            if tool.type:
+            if tool.type != 'function':
                 tool_data["type"] = tool.type
+
+            if tool.type == 'function':
+                tool_data['name'] = tool.name
+                tool_data["input_schema"] = self.get_schema(tool)
+                tool_data["description"] = tool.description
 
             if tool.params:
                 for key, value in tool.params.items():
@@ -317,15 +405,29 @@ class AnthropicConverter(RequestDataConverter):
 
         return tools
 
-    def make_request_data(self, config: ConversationConfig, messages: list[UniversalMessage]) -> dict[str, Any]:
+    def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
+        provider_messages: list[dict[str, Any]] = self.messages_to_provider_format(
+            conversation.config,
+            conversation.messages
+        )
+
+        max_tokens = conversation.config.max_tokens or 4096
+
         request_data: dict[str, Any] = {
-            "model": config.model,
-            "messages": self.messages_to_provider_format(config, messages),
-            "system": config.system_prompt or "You are a helpful assistant"
+            "max_tokens": max_tokens,
+            "messages": provider_messages,
+            "model": conversation.config.model.name,
+            "betas": ["web-fetch-2025-09-10"],
+            "system": conversation.config.system_prompt or "You are a helpful assistant",
+            "stream": True,
         }
 
-        if config.max_tokens is not None:
-            request_data["max_tokens"] = config.max_tokens
+        if conversation.config.model.tool_calling_supported:
+            tools = self.get_tools(conversation.config)
+            request_data["tools"] = tools
+
+        if conversation.config.thinking and conversation.config.model.thinking_supported:
+            request_data['thinking'] = {'type': 'enabled', 'budget_tokens': max_tokens - 500}
 
         return request_data
 
@@ -339,11 +441,13 @@ class ConversationManager:
             AIProvider.OLLAMA: OllamaConverter(),
         }
         self.messages: list[UniversalMessage] = []
-        self.current_provider: AIProvider | None = None
-        self.config: ConversationConfig = ConversationConfig(model="")
+        self.config: ConversationConfig = ConversationConfig()
+        self.user_id: int | None = None
 
-    def set_provider(self, provider: AIProvider, model: str):
-        self.current_provider = provider
+    def set_user_id(self, user_id: int | None):
+        self.user_id = user_id
+
+    def set_model(self, model: LLMModel):
         self.config = replace(self.config, model=model)
 
     def set_config_param(self, param: str, value: Any):
@@ -354,9 +458,9 @@ class ConversationManager:
         role: MessageRole,
         content: str,
         content_type: MessageType = MessageType.TEXT,
-        tool_calls: list[dict[str, Any]] | None = None,
         tool_call_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        tool_name: str | None = None,
+        tool_call_params: dict[str, Any] | None = None,
     ) -> UniversalMessage:
         if self.config.one_off is True:
             self.messages.clear()
@@ -366,42 +470,315 @@ class ConversationManager:
             role=role,
             content=content,
             content_type=content_type,
-            tool_calls=tool_calls,
+            tool_name=tool_name,
             tool_call_id=tool_call_id,
-            metadata=metadata
+            tool_call_params=tool_call_params,
         )
+
         self.messages.append(message)
         return message
-
-    def add_ai_response(self, response_content: str, tool_calls: list[dict[str, Any]] | None = None):
-        return self.add_message(
-            MessageRole.ASSISTANT,
-            response_content,
-            tool_calls=tool_calls
-        )
 
     def clear_conversation(self):
         self.messages.clear()
 
-    def get_request_data(self) -> RequestData:
-        if not self.current_provider or not self.config:
-            raise ValueError("AI provider and configuration must be set before getting request data.")
+    def has_tool(self, tool_name: str) -> bool:
+        if not self.config.tools:
+            return False
 
-        converter = self.converters[self.current_provider]
+        for tool in self.config.tools:
+            if tool.type == 'function' and tool.name == tool_name:
+                return True
 
-        provider_messages: list[dict[str, Any]] = converter.messages_to_provider_format(
-            self.config,
-            self.messages
+        return False
+
+    async def execute_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
+        if not self.config.tools:
+            raise ValueError(f"Tool {tool_name} not found in conversation configuration.")
+
+        for tool in self.config.tools:
+            if tool.type == 'function' and tool.name == tool_name:
+                if not tool.function:
+                    raise ValueError(f"Tool {tool_name} has no associated function.")
+                return await tool.function(**arguments)
+
+        raise ValueError(f"Tool {tool_name} not found in conversation configuration.")
+
+    def dump(self) -> dict[str, Any]:
+        return {
+            'messages': [msg for msg in self.messages],
+            'config': self.config,
+        }
+
+    async def make_request(self) -> AsyncGenerator[str, None]:
+        if not self.config.model:
+            raise ValueError("Model is not set for the conversation.")
+
+        current_provider = self.config.model.provider
+        converter: RequestDataConverter = self.converters[current_provider]
+
+        if current_provider == AIProvider.OPENAI:
+            async for chunk in openai_instance.make_request(self, converter):
+                yield chunk
+        elif current_provider == AIProvider.ANTHROPIC:
+            async for chunk in claude_instance.make_request(self, converter):
+                yield chunk
+        elif current_provider == AIProvider.OLLAMA:
+            async for chunk in ollama_instance.make_request(self, converter):
+                yield chunk
+
+
+class OpenAIInstance:
+    def __init__(self):
+        self.client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+
+    async def execute_tools(
+        self,
+        conversation: ConversationManager,
+        function_call_requests: list[ResponseFunctionToolCall]
+    ) -> Any:
+        results: list[tuple[ResponseFunctionToolCall, Any]] = []
+        for func_call in function_call_requests:
+            if not conversation.has_tool(func_call.name):
+                continue
+            arguments: dict[str, Any] = {}
+
+            if func_call.arguments:
+                arguments = json.loads(func_call.arguments)
+
+            result = await conversation.execute_tool(func_call.name, arguments)
+
+            results.append((func_call, result))
+        return results
+
+    async def whisper_transcribe(self, audio: BinaryIO) -> str:
+        response = await self.client.audio.transcriptions.create(
+            model='whisper-1',
+            file=audio,
         )
 
-        tools = converter.get_tools(self.config)
+        return response.text
 
-        return RequestData(
-            provider=self.current_provider,
-            model=self.config.model,
-            messages=provider_messages,
-            max_tokens=self.config.max_tokens,
-            system_prompt=self.config.system_prompt,
-            thinking=self.config.thinking,
-            tools=tools
-        )
+    async def make_request(
+        self,
+        conversation: ConversationManager,
+        converter: RequestDataConverter
+    ) -> AsyncGenerator[str, None]:
+        for _ in range(3):
+            request_data = converter.get_request_parameters(conversation)
+
+            try:
+                stream = await self.client.responses.create(**request_data)
+            except Exception as exc:
+                logger.info(request_data)
+                raise exc
+
+            full_response: str = ''
+            function_calls: list[ResponseFunctionToolCall] = []
+
+            async for event in stream:
+                if isinstance(event, ResponseOutputItemAddedEvent) and isinstance(event.item, ResponseFunctionToolCall):
+                    function_calls.append(event.item)
+
+                if isinstance(event, ResponseTextDeltaEvent):
+                    content = event.delta
+                    if content:
+                        full_response += content
+                        yield content
+
+            if full_response:
+                conversation.add_message(
+                    role=MessageRole.ASSISTANT,
+                    content=full_response
+                )
+
+            executed = await self.execute_tools(conversation, function_calls)
+
+            for func_call, result in executed:
+                params: dict[str, Any] = {}
+
+                if func_call.arguments:
+                    params = json.loads(func_call.arguments)
+
+                conversation.add_message(
+                    role=MessageRole.ASSISTANT,
+                    content='',
+                    content_type=MessageType.TOOL_USE,
+                    tool_call_id=func_call.call_id,
+                    tool_name=func_call.name,
+                    tool_call_params=params
+                )
+
+                conversation.add_message(
+                    role=MessageRole.USER,
+                    content=result,
+                    content_type=MessageType.TOOL_RESULT,
+                    tool_call_id=func_call.call_id
+                )
+
+            if not executed:
+                break
+
+
+class ClaudeInstance:
+    def __init__(self):
+        self.client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    async def execute_tools(
+        self,
+        conversation: ConversationManager,
+        function_call_requests: list[anthropic.types.ToolUseBlock]
+    ) -> list[tuple[anthropic.types.ToolUseBlock, Any]]:
+        results: list[tuple[anthropic.types.ToolUseBlock, Any]] = []
+        for func_call in function_call_requests:
+            if not conversation.has_tool(func_call.name):
+                continue
+
+            arguments: dict[str, Any] = func_call.input
+
+            result = await conversation.execute_tool(func_call.name, arguments)
+
+            results.append((func_call, result))
+        return results
+
+    # async def process_request(self, conversation: ConversationManager, request: dict[str, Any]) -> Any:
+        # [{'role': 'user', 'content': 'сколько время?'}, {'role': 'assistant', 'content': 'Сейчас время 08:50 утра, 24 октября 2025 года. Чем могу помочь?'}, {'role': 'assistant', 'content': 'Сейчас время 08:50. Чем могу помочь?'}, {'role': 'user', 'content': 'сколько время?'}, {'role': 'assistant', 'content': [{'id': 'toolu_01Y5LTQDyFeds3LARjrjpuv8', 'input': {}, 'name': 'get_current_time', 'type': 'tool_use'}]}, {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 'toolu_01Y5LTQDyFeds3LARjrjpuv8', 'content': '2025-10-24 08:51:23'}]}, {'role': 'assistant', 'content': 'Сейчас **08:51:23** (8 часов 51 минута и 23 секунды), 24 октября 2025 года.'}]
+
+    async def make_request(
+        self,
+        conversation: ConversationManager,
+        converter: RequestDataConverter
+    ) -> AsyncGenerator[str, None]:
+        for _ in range(3):
+            request_data = converter.get_request_parameters(conversation)
+
+            try:
+                stream = await self.client.beta.messages.create(**request_data)
+            except Exception as exc:
+                logger.info(request_data)
+                raise exc
+
+            full_response: str = ''
+            function_calls: list[anthropic.types.ToolUseBlock] = []
+
+            async for event in stream:
+                if hasattr(event, 'content_block') and isinstance(event.content_block, anthropic.types.ToolUseBlock):
+                    function_calls.append(event.content_block)
+
+                if hasattr(event, 'delta') and hasattr(event.delta, 'text'):
+                    content = event.delta.text
+
+                    if content:
+                        full_response += content
+                        yield content
+
+            if full_response:
+                conversation.add_message(
+                    role=MessageRole.ASSISTANT,
+                    content=full_response
+                )
+
+            executed = await self.execute_tools(conversation, function_calls)
+
+            for func_call, result in executed:
+                conversation.add_message(
+                    role=MessageRole.ASSISTANT,
+                    content='',
+                    tool_call_id=func_call.id,
+                    tool_name=func_call.name,
+                    tool_call_params=func_call.input
+                )
+
+                conversation.add_message(
+                    role=MessageRole.USER,
+                    content=result,
+                    content_type=MessageType.TOOL_RESULT,
+                    tool_call_id=func_call.id
+                )
+
+            if not executed:
+                break
+
+
+class OllamaInstance:
+    def __init__(self):
+        self.client = ollama.AsyncClient(host=config.OLLAMA_HOST)
+
+    async def execute_tools(
+        self,
+        conversation: ConversationManager,
+        function_call_requests: list[ollama.Message.ToolCall]
+    ) -> Any:
+        results: list[tuple[ollama.Message.ToolCall, Any]] = []
+        for func_call in function_call_requests:
+            if not conversation.has_tool(func_call.function.name):
+                continue
+            arguments: dict[str, Any] = {}
+
+            if func_call.function.arguments:
+                arguments = func_call.function.arguments
+
+            result = await conversation.execute_tool(func_call.function.name, arguments)
+
+            results.append((func_call, result))
+        return results
+
+    async def make_request(
+        self,
+        conversation: ConversationManager,
+        converter: RequestDataConverter
+    ) -> AsyncGenerator[str, None]:
+        for _ in range(3):
+            request_data = converter.get_request_parameters(conversation)
+
+            full_response: str = ''
+            function_calls: list[Any] = []
+
+            try:
+                stream = await self.client.chat(**request_data)
+            except Exception as exc:
+                logger.info(request_data)
+                raise exc
+
+            async for event in stream:
+                if isinstance(event, ollama.ChatResponse):
+                    content = event.message.content
+                    if content:
+                        full_response += content
+                        yield content
+
+                    if event.message.tool_calls:
+                        function_calls.extend(event.message.tool_calls)
+
+            if full_response:
+                conversation.add_message(
+                    role=MessageRole.ASSISTANT,
+                    content=full_response
+                )
+
+            executed = await self.execute_tools(conversation, function_calls)
+
+            for func_call, result in executed:
+                conversation.add_message(
+                    role=MessageRole.ASSISTANT,
+                    content='',
+                    content_type=MessageType.TOOL_USE,
+                    tool_call_id=str(result.__hash__()),
+                    tool_name=func_call.function.name,
+                    tool_call_params=func_call.function.arguments
+                )
+
+                conversation.add_message(
+                    role=MessageRole.USER,
+                    content=result,
+                    content_type=MessageType.TOOL_RESULT,
+                    tool_name=func_call.function.name,
+                    tool_call_id=str(result.__hash__())
+                )
+
+            if not executed:
+                break
+
+
+openai_instance = OpenAIInstance()
+claude_instance = ClaudeInstance()
+ollama_instance = OllamaInstance()

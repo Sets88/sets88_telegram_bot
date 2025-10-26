@@ -1,5 +1,6 @@
 from enum import Enum
 import json
+from datetime import datetime
 import dataclasses
 
 
@@ -37,7 +38,9 @@ class ConvEncoder(json.JSONEncoder):
             return dataclasses.asdict(obj)
         if isinstance(obj, Enum):
             return obj.value
-        if isinstance(obj, ):
-            return [obj.real, obj.imag]
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if callable(obj):
+            return str(obj)
         # Let the base class default method raise the TypeError
         return super().default(obj)
