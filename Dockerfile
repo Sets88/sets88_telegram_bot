@@ -11,4 +11,6 @@ COPY . .
 
 RUN mkdir -p /app/conv
 
+USER 1000
+
 CMD ["python", "bot.py"]
