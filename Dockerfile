@@ -11,6 +11,8 @@ COPY . .
 
 RUN mkdir -p /app/conv
 
+RUN groupadd -g 1000 user && useradd -u 1000 -g 1000 user
+
 USER 1000:1000
 
 CMD ["python", "bot.py"]
