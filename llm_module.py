@@ -133,12 +133,12 @@ def get_or_create_conversation(botnav: TeleBotNav, message: Message) -> Conversa
     return message.state_data['conversation']
 
 
-def save_conversation_to_file(user_id: int, conversation: ConversationManager) -> None:
+def save_conversation_to_file(user: str, conversation: ConversationManager) -> None:
     if not os.path.exists(CONV_PATH):
         os.mkdir(CONV_PATH)
     json.dump(
         conversation.dump(),
-        open(os.path.join(CONV_PATH, f"{user_id}_{conversation.id}.json"), "w"),
+        open(os.path.join(CONV_PATH, f"{user}_{conversation.id}.json"), "w"),
         cls=ConvEncoder
     )
 
@@ -430,7 +430,12 @@ class LLMRouter:
             for msg in message_splitter.flush():
                 await botnav.bot.send_message(message.chat.id, msg)
 
-            save_conversation_to_file(botnav.get_user(message).id, conversation)
+            user = botnav.get_user(message)
+
+            save_conversation_to_file(
+                f'{user.id}_{user.username}',
+                conversation
+            )
         except RateLimitError as exc:
             await botnav.bot.send_message(message.chat.id, 'OpenAi servers are overloaded, try again later')
             logger.exception(exc)
