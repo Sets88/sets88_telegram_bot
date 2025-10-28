@@ -11,7 +11,6 @@ import os
 from telebot.types import Message
 from openai import RateLimitError
 from pydub import AudioSegment
-from replicate.helpers import FileOutput
 
 import config
 from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType, Tool, LLMModel
@@ -21,6 +20,7 @@ from lib.utils import MessageSplitter, ConvEncoder
 from telebot_nav import TeleBotNav
 from logger import logger
 from replicate_module import replicate_execute_and_send
+from help_content import HELP_CONTENT
 
 
 DEFAULT_MODEL = 'gpt-4.1-mini'
@@ -369,6 +369,14 @@ class LLMRouter:
         await cls.show_chat_options(botnav, message)
 
     @classmethod
+    async def show_help(cls, botnav: TeleBotNav, message: Message) -> None:
+        await botnav.bot.send_message(
+            message.chat.id,
+            HELP_CONTENT,
+            parse_mode='Markdown'
+        )
+
+    @classmethod
     async def show_chat_options(cls, botnav: TeleBotNav, message: Message) -> None:
         conversation = get_or_create_conversation(botnav, message)
         one_off_status = "✅" if conversation.config.one_off else "❌"
@@ -388,6 +396,7 @@ class LLMRouter:
                 f'🧹 Clean conversation({conversation_length})': cls.clean_conversation,
                 f'🤖 Model({model.name})': cls.show_models_list,
                 f'👥 Role({role})': cls.show_roles_list,
+                '❓ Help': cls.show_help,
             },
             row_width=1,
             message_to_rewrite=message if message.from_user.is_bot else None,
