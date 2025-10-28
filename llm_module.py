@@ -3,8 +3,7 @@ import base64
 from datetime import datetime
 from typing import Callable, Coroutine
 import functools
-import dataclasses
-from typing import Any
+from typing import Any, Literal
 from io import BytesIO
 import json
 import os
@@ -12,13 +11,17 @@ import os
 from telebot.types import Message
 from openai import RateLimitError
 from pydub import AudioSegment
+from replicate.helpers import FileOutput
 
 import config
 from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType, Tool, LLMModel
+from lib.llm import ToolParameter
 from lib.llm import openai_instance
 from lib.utils import MessageSplitter, ConvEncoder
 from telebot_nav import TeleBotNav
 from logger import logger
+from replicate_module import replicate_execute_and_send
+
 
 DEFAULT_MODEL = 'gpt-4.1-mini'
 
@@ -34,6 +37,7 @@ AVAILABLE_LLM_MODELS = {
     'claude-opus-4-1': LLMModel(AIProvider.ANTHROPIC, 'claude-opus-4-1', True, True, True),
     'gpt-oss:20b': LLMModel(AIProvider.OLLAMA, 'gpt-oss:20b', True, True, False),
     'gemma3:27b': LLMModel(AIProvider.OLLAMA, 'gemma3:27b', True, False, True),
+    'qwen3:32b': LLMModel(AIProvider.OLLAMA, 'qwen3:32b', True, True, False),
 }
 
 CHAT_ROLES = {
@@ -92,14 +96,34 @@ CHAT_ROLES = {
 }
 
 
-async def get_current_time():
+async def image_generation_tool(
+    botnav: TeleBotNav,
+    message: Message,
+    model: Literal['flux-pro'],
+    prompt: str
+) -> str:
+    input_data = {
+        'prompt': prompt
+    }
+
+    try:
+        await replicate_execute_and_send(botnav, message, model, input_data)
+    except Exception as exc:
+        await botnav.bot.send_message(message.chat.id, "Image generation failed, try again later")
+        logger.exception(exc)
+        return 'false'
+
+    return 'true'
+
+
+async def get_current_time(botnav: TeleBotNav, message: Message) -> str:
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
 DEFAULT_TOOLS = [
     Tool(type='web_search', providers=[AIProvider.OPENAI]),
     Tool(type='web_search_20250305', providers=[AIProvider.ANTHROPIC], name='web_search', params={'max_uses': 5}),
-    Tool(type='web_fetch_20250910', providers=[AIProvider.ANTHROPIC], name='web_fetch', params={'max_uses': 5}),
+    # Tool(type='web_fetch_20250910', providers=[AIProvider.ANTHROPIC], name='web_fetch', params={'max_uses': 5}),
     Tool(
         type='function',
         providers=[AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA],
@@ -107,6 +131,23 @@ DEFAULT_TOOLS = [
         description='Returns the current time in YYYY-MM-DD HH:MM:SS format',
         function=get_current_time,
         schema={}
+    ),
+    Tool(
+        type='function',
+        providers=[AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA] if config.REPLICATE_API_KEY else [],
+        name='image_generation_tool',
+        description='Generates an image and sends it to user based on the provided prompt, returns true if successful',
+        function=image_generation_tool,
+        schema={
+            'model': ToolParameter(
+                name='model', description='The image generation model to use',
+                ptype=Literal['flux-pro'], required=True
+            ),
+            'prompt': ToolParameter(
+                name='prompt', description='The prompt to generate the image from',
+                ptype=str, required=True
+            )
+        }
     )
 ]
 
@@ -419,16 +460,25 @@ class LLMRouter:
             message_splitter = MessageSplitter(4000)
             conversation = get_or_create_conversation(botnav, message)
 
-            llm_gen = conversation.make_request()
+            llm_gen = conversation.make_request(extra_params={'botnav': botnav, 'message': message})
 
             async for reply in llm_gen:
                 await botnav.send_chat_action(message.chat.id, 'typing')
 
+                # Flush command
+                if reply is None:
+                    for msg in message_splitter.flush():
+                        await botnav.bot.send_message(message.chat.id, msg)
+                    continue
+
                 msg = message_splitter.add(reply)
+
                 if msg:
                     await botnav.bot.send_message(message.chat.id, msg)
+
             for msg in message_splitter.flush():
-                await botnav.bot.send_message(message.chat.id, msg)
+                if msg:
+                    await botnav.bot.send_message(message.chat.id, msg)
 
             user = botnav.get_user(message)
 

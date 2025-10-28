@@ -1,7 +1,7 @@
 import json
 from time import time
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, get_args, Literal
 from typing import AsyncGenerator, BinaryIO
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -12,7 +12,8 @@ import uuid
 import anthropic
 import ollama
 from openai import AsyncOpenAI
-from openai.types.responses import ResponseTextDeltaEvent, ResponseFunctionToolCall, ResponseOutputItemAddedEvent
+from openai.types.responses import ResponseTextDeltaEvent, ResponseFunctionToolCall
+from openai.types.responses import ResponseOutputItemAddedEvent, ResponseFunctionCallArgumentsDeltaEvent
 
 import config
 from logger import logger
@@ -48,22 +49,22 @@ class LLMModel:
 
 
 @dataclass
+class ToolParameter:
+    name: str
+    description: str
+    ptype: type
+    required: bool
+
+
+@dataclass
 class Tool:
     type: str
     providers: list[AIProvider]
     name: str | None = None
     function: Callable | None = None,
     description: str | None = None,
-    schema: dict[str, Any] | None = None,
+    schema: dict[str, ToolParameter] | None = None,
     params: dict[str, Any] | None = None
-
-
-class ToolParameters:
-    def __init__(self, name: str, description: str, ptype: type = str, required: bool = False):
-        self.name = name
-        self.description = description
-        self.ptype = ptype
-        self.required = required
 
 
 @dataclass
@@ -104,6 +105,19 @@ class RequestDataConverter(ABC):
     @abstractmethod
     def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
         pass
+
+
+def get_type_data(ptype: type) -> tuple[str, tuple[str] | None]:
+    if ptype == str:
+        return "string", None
+    elif ptype == int:
+        return "integer", None
+    elif ptype == float:
+        return "number", None
+    elif ptype == bool:
+        return "boolean", None
+    elif hasattr(ptype, '__origin__') and ptype.__origin__ == Literal:
+        return 'string', list(get_args(ptype))
 
 
 class OpenAIConverter(RequestDataConverter):
@@ -157,6 +171,30 @@ class OpenAIConverter(RequestDataConverter):
 
         return result_message
 
+    def get_parameters(self, tool: Tool) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+
+        if not tool.schema:
+            return params
+
+        params['type'] = 'object'
+        params['properties'] = {}
+        params['required'] = []
+
+        for key, value in tool.schema.items():
+            ptype, enum_list = get_type_data(value.ptype)
+            params['properties'][key] = {
+                'type': ptype,
+                'description': value.description,
+            }
+            if enum_list:
+                params['properties'][key]['enum'] = enum_list
+
+            if value.required:
+                params['required'].append(key)
+
+        return params
+
     def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
         if not config.model or not config.model.tool_calling_supported:
             return None
@@ -174,7 +212,7 @@ class OpenAIConverter(RequestDataConverter):
 
             if tool.type == 'function':
                 tool_data['name'] = tool.name
-                tool_data["parameters"] = tool.schema
+                tool_data["parameters"] = self.get_parameters(tool)
                 tool_data["description"] = tool.description
 
             if tool.params:
@@ -259,6 +297,32 @@ class OllamaConverter(RequestDataConverter):
 
         return result_messages
 
+    def get_parameters(self, tool: Tool) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+
+        if not tool.schema:
+            return params
+
+        params['type'] = 'object'
+        params['properties'] = {}
+        params['required'] = []
+
+        for key, value in tool.schema.items():
+            ptype, enum_list = get_type_data(value.ptype)
+            params['properties'][key] = {
+                'type': ptype,
+                'description': value.description,
+            }
+            if enum_list:
+                params['properties'][key]['enum'] = enum_list
+                # Not following the line above usually, so adding it to description as well
+                params['properties'][key]['description'] = f"{value.description} Possible values: {', '.join(enum_list)}"
+
+            if value.required:
+                params['required'].append(key)
+
+        return params
+
     def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
         tools: list[dict[str, Any]] = []
 
@@ -275,11 +339,8 @@ class OllamaConverter(RequestDataConverter):
                 tool_data['function'] = {
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.schema
+                    "parameters": self.get_parameters(tool)
                 }
-                tool_data['name'] = tool.name
-                tool_data["parameters"] = tool.schema
-                tool_data["description"] = tool.description
 
             tools.append(tool_data)
         return tools
@@ -362,21 +423,33 @@ class AnthropicConverter(RequestDataConverter):
 
         return result_messages
 
-    def get_schema(self, tool: Tool) -> dict[str, Any]:
-        schema: dict[str, Any] = {
+    def get_parameters(self, tool: Tool) -> dict[str, Any]:
+        params: dict[str, Any] = {
             "type": "object",
             "properties": {},
             "required": []
         }
 
         if not tool.schema:
-            return schema
+            return params
+
+        params['type'] = 'object'
+        params['properties'] = {}
+        params['required'] = []
 
         for key, value in tool.schema.items():
-            schema["properties"][key] = value
-            schema["required"].append(key)
+            ptype, enum_list = get_type_data(value.ptype)
+            params['properties'][key] = {
+                'type': ptype,
+                'description': value.description,
+            }
+            if enum_list:
+                params['properties'][key]['enum'] = enum_list
 
-        return schema
+            if value.required:
+                params['required'].append(key)
+
+        return params
 
     def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
         tools: list[dict[str, Any]] = []
@@ -394,7 +467,7 @@ class AnthropicConverter(RequestDataConverter):
 
             if tool.type == 'function':
                 tool_data['name'] = tool.name
-                tool_data["input_schema"] = self.get_schema(tool)
+                tool_data["input_schema"] = self.get_parameters(tool)
                 tool_data["description"] = tool.description
 
             if tool.params:
@@ -417,7 +490,6 @@ class AnthropicConverter(RequestDataConverter):
             "max_tokens": max_tokens,
             "messages": provider_messages,
             "model": conversation.config.model.name,
-            "betas": ["web-fetch-2025-09-10"],
             "system": conversation.config.system_prompt or "You are a helpful assistant",
             "stream": True,
         }
@@ -509,7 +581,7 @@ class ConversationManager:
             'config': self.config,
         }
 
-    async def make_request(self) -> AsyncGenerator[str, None]:
+    async def make_request(self, extra_params: dict[str, Any]) -> AsyncGenerator[str|None, None]:
         if not self.config.model:
             raise ValueError("Model is not set for the conversation.")
 
@@ -517,13 +589,13 @@ class ConversationManager:
         converter: RequestDataConverter = self.converters[current_provider]
 
         if current_provider == AIProvider.OPENAI:
-            async for chunk in openai_instance.make_request(self, converter):
+            async for chunk in openai_instance.make_request(self, converter, extra_params):
                 yield chunk
         elif current_provider == AIProvider.ANTHROPIC:
-            async for chunk in claude_instance.make_request(self, converter):
+            async for chunk in claude_instance.make_request(self, converter, extra_params):
                 yield chunk
         elif current_provider == AIProvider.OLLAMA:
-            async for chunk in ollama_instance.make_request(self, converter):
+            async for chunk in ollama_instance.make_request(self, converter, extra_params):
                 yield chunk
 
 
@@ -534,7 +606,8 @@ class OpenAIInstance:
     async def execute_tools(
         self,
         conversation: ConversationManager,
-        function_call_requests: list[ResponseFunctionToolCall]
+        function_call_requests: list[ResponseFunctionToolCall],
+        extra_params: dict[str, Any]
     ) -> Any:
         results: list[tuple[ResponseFunctionToolCall, Any]] = []
         for func_call in function_call_requests:
@@ -545,7 +618,7 @@ class OpenAIInstance:
             if func_call.arguments:
                 arguments = json.loads(func_call.arguments)
 
-            result = await conversation.execute_tool(func_call.name, arguments)
+            result = await conversation.execute_tool(func_call.name, arguments | extra_params)
 
             results.append((func_call, result))
         return results
@@ -561,7 +634,8 @@ class OpenAIInstance:
     async def make_request(
         self,
         conversation: ConversationManager,
-        converter: RequestDataConverter
+        converter: RequestDataConverter,
+        extra_params: dict[str, Any]
     ) -> AsyncGenerator[str, None]:
         for _ in range(3):
             request_data = converter.get_request_parameters(conversation)
@@ -573,11 +647,20 @@ class OpenAIInstance:
                 raise exc
 
             full_response: str = ''
-            function_calls: list[ResponseFunctionToolCall] = []
+            function_calls: dict[ResponseFunctionToolCall] = {}
 
             async for event in stream:
                 if isinstance(event, ResponseOutputItemAddedEvent) and isinstance(event.item, ResponseFunctionToolCall):
-                    function_calls.append(event.item)
+                    function_calls[event.item.id] = event.item
+
+                if isinstance(event, ResponseFunctionCallArgumentsDeltaEvent):
+                    if not function_calls.get(event.item_id):
+                        continue
+
+                    if not function_calls[event.item_id].arguments:
+                        function_calls[event.item_id].arguments = ''
+
+                    function_calls[event.item_id].arguments += event.delta
 
                 if isinstance(event, ResponseTextDeltaEvent):
                     content = event.delta
@@ -591,7 +674,7 @@ class OpenAIInstance:
                     content=full_response
                 )
 
-            executed = await self.execute_tools(conversation, function_calls)
+            executed = await self.execute_tools(conversation, function_calls.values(), extra_params)
 
             for func_call, result in executed:
                 params: dict[str, Any] = {}
@@ -626,7 +709,8 @@ class ClaudeInstance:
     async def execute_tools(
         self,
         conversation: ConversationManager,
-        function_call_requests: list[anthropic.types.ToolUseBlock]
+        function_call_requests: list[anthropic.types.ToolUseBlock],
+        extra_params: dict[str, Any]
     ) -> list[tuple[anthropic.types.ToolUseBlock, Any]]:
         results: list[tuple[anthropic.types.ToolUseBlock, Any]] = []
         for func_call in function_call_requests:
@@ -635,7 +719,7 @@ class ClaudeInstance:
 
             arguments: dict[str, Any] = func_call.input
 
-            result = await conversation.execute_tool(func_call.name, arguments)
+            result = await conversation.execute_tool(func_call.name, arguments | extra_params)
 
             results.append((func_call, result))
         return results
@@ -646,55 +730,70 @@ class ClaudeInstance:
     async def make_request(
         self,
         conversation: ConversationManager,
-        converter: RequestDataConverter
-    ) -> AsyncGenerator[str, None]:
+        converter: RequestDataConverter,
+        extra_params: dict[str, Any]
+    ) -> AsyncGenerator[str | None, None]:
         for _ in range(3):
             request_data = converter.get_request_parameters(conversation)
 
             try:
-                stream = await self.client.beta.messages.create(**request_data)
+                stream = await self.client.messages.create(**request_data)
             except Exception as exc:
                 logger.info(request_data)
                 raise exc
 
             full_response: str = ''
             function_calls: list[anthropic.types.ToolUseBlock] = []
+            tool_params_json = ''
+            executed: list[tuple[anthropic.types.ToolUseBlock, Any]] = []
 
             async for event in stream:
-                if hasattr(event, 'content_block') and isinstance(event.content_block, anthropic.types.ToolUseBlock):
+                if event.type == 'content_block_stop':
+                    if full_response:
+                        conversation.add_message(
+                            role=MessageRole.ASSISTANT,
+                            content=full_response
+                        )
+                        full_response = ''
+                        # Flush command
+                        yield None
+
+                    if function_calls:
+                        function_calls[-1].input = json.loads(tool_params_json)
+                        tool_params_json = ''
+
+                        executed = await self.execute_tools(conversation, function_calls, extra_params)
+
+                        for func_call, result in executed:
+                            conversation.add_message(
+                                role=MessageRole.ASSISTANT,
+                                content='',
+                                content_type=MessageType.TOOL_USE,
+                                tool_call_id=func_call.id,
+                                tool_name=func_call.name,
+                                tool_call_params=func_call.input
+                            )
+
+                            conversation.add_message(
+                                role=MessageRole.USER,
+                                content=result,
+                                content_type=MessageType.TOOL_RESULT,
+                                tool_call_id=func_call.id
+                            )
+                        function_calls = []
+
+                if event.type == 'content_block_start' and isinstance(event.content_block, anthropic.types.ToolUseBlock):
                     function_calls.append(event.content_block)
 
-                if hasattr(event, 'delta') and hasattr(event.delta, 'text'):
+                if event.type == 'content_block_delta' and isinstance(event.delta, anthropic.types.InputJSONDelta):
+                    tool_params_json += event.delta.partial_json
+
+                elif event.type == 'content_block_delta' and isinstance(event.delta, anthropic.types.TextDelta):
                     content = event.delta.text
 
                     if content:
                         full_response += content
                         yield content
-
-            if full_response:
-                conversation.add_message(
-                    role=MessageRole.ASSISTANT,
-                    content=full_response
-                )
-
-            executed = await self.execute_tools(conversation, function_calls)
-
-            for func_call, result in executed:
-                conversation.add_message(
-                    role=MessageRole.ASSISTANT,
-                    content='',
-                    tool_call_id=func_call.id,
-                    tool_name=func_call.name,
-                    tool_call_params=func_call.input
-                )
-
-                conversation.add_message(
-                    role=MessageRole.USER,
-                    content=result,
-                    content_type=MessageType.TOOL_RESULT,
-                    tool_call_id=func_call.id
-                )
-
             if not executed:
                 break
 
@@ -706,7 +805,8 @@ class OllamaInstance:
     async def execute_tools(
         self,
         conversation: ConversationManager,
-        function_call_requests: list[ollama.Message.ToolCall]
+        function_call_requests: list[ollama.Message.ToolCall],
+        extra_params: dict[str, Any]
     ) -> Any:
         results: list[tuple[ollama.Message.ToolCall, Any]] = []
         for func_call in function_call_requests:
@@ -717,7 +817,7 @@ class OllamaInstance:
             if func_call.function.arguments:
                 arguments = func_call.function.arguments
 
-            result = await conversation.execute_tool(func_call.function.name, arguments)
+            result = await conversation.execute_tool(func_call.function.name, arguments | extra_params)
 
             results.append((func_call, result))
         return results
@@ -725,7 +825,8 @@ class OllamaInstance:
     async def make_request(
         self,
         conversation: ConversationManager,
-        converter: RequestDataConverter
+        converter: RequestDataConverter,
+        extra_params: dict[str, Any]
     ) -> AsyncGenerator[str, None]:
         for _ in range(3):
             request_data = converter.get_request_parameters(conversation)
@@ -755,7 +856,7 @@ class OllamaInstance:
                     content=full_response
                 )
 
-            executed = await self.execute_tools(conversation, function_calls)
+            executed = await self.execute_tools(conversation, function_calls, extra_params)
 
             for func_call, result in executed:
                 conversation.add_message(
@@ -768,7 +869,7 @@ class OllamaInstance:
                 )
 
                 conversation.add_message(
-                    role=MessageRole.USER,
+                    role=MessageRole.ASSISTANT,
                     content=result,
                     content_type=MessageType.TOOL_RESULT,
                     tool_name=func_call.function.name,

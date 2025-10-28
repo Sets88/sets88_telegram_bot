@@ -3,6 +3,7 @@ import asyncio
 import functools
 from io import BytesIO
 from copy import copy
+from typing import Any
 
 from telebot.types import Message
 import replicate
@@ -290,6 +291,89 @@ def replicate_execute(replicate_id: str, input_data: dict):
     return output
 
 
+async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model_name: str, input_data: dict[str, Any]):
+    if model_name not in REPLICATE_MODELS:
+        raise ValueError(f'Unknown model {model_name}')
+
+    replicate_model = REPLICATE_MODELS[model_name]
+    result = await botnav.await_coro_sending_action(
+        message.chat.id,
+        asyncio.to_thread(replicate_execute, replicate_model['replicate_id'], input_data),
+        get_await_action_type(replicate_model)
+    )
+
+    if replicate_model['output_type'] == 'photo':
+        if isinstance(result, list):
+            for photo in result:
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_photo(message.chat.id, photo),
+                    'upload_photo'
+                )
+        elif isinstance(result, str):
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_photo(message.chat.id, result),
+                'upload_photo'
+            )
+        elif isinstance(result, FileOutput):
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_photo(message.chat.id, result.read()),
+                'upload_photo'
+            )
+
+    if replicate_model['output_type'] == 'text':
+        parts = []
+        for part in result:
+            await botnav.send_chat_action(message.chat.id, 'typing')
+            parts.append(part)
+
+            if len(parts) > 500:
+                await botnav.bot.send_message(message.chat.id, "".join(parts))
+                parts = []
+        await botnav.bot.send_message(message.chat.id, "".join(parts))
+
+    if replicate_model['output_type'] == 'file':
+        if isinstance(result, FileOutput):
+            document = await botnav.await_coro_sending_action(
+                message.chat.id,
+                download_file(result.url),
+                'upload_document'
+            )
+
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_document(message.chat.id, document, timeout=120),
+                'upload_document'
+            )
+        elif isinstance(result, list):
+            for document_url in result:
+                document = botnav.await_coro_sending_action(
+                    message.chat.id,
+                    download_file(document_url),
+                    'upload_document'
+                )
+
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_document(message.chat.id, document, timeout=120),
+                    'upload_document'
+                )
+        elif isinstance(result, str):
+                document = await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    download_file(result),
+                    'upload_document'
+                )
+
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_document(message.chat.id, document, timeout=120),
+                    'upload_document'
+                )
+
+
 async def replicate_set_select_param(param_name: str, value: str, botnav: TeleBotNav, message: Message):
     await botnav.bot.delete_message(message.chat.id, message.message_id)
     message.state_data['replicate_params'][param_name] = value
@@ -512,82 +596,7 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
         input_data[replicate_model.get('input_field', 'image')] = BytesIO(file_content)
 
     try:
-        result = await botnav.await_coro_sending_action(
-            message.chat.id,
-            asyncio.to_thread(replicate_execute, replicate_model['replicate_id'], input_data),
-            get_await_action_type(replicate_model)
-        )
-
-        if replicate_model['output_type'] == 'photo':
-            if isinstance(result, list):
-                for photo in result:
-                    await botnav.await_coro_sending_action(
-                        message.chat.id,
-                        botnav.bot.send_photo(message.chat.id, photo),
-                        'upload_photo'
-                    )
-            elif isinstance(result, str):
-                await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_photo(message.chat.id, result),
-                    'upload_photo'
-                )
-            elif isinstance(result, FileOutput):
-                await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_photo(message.chat.id, result.read()),
-                    'upload_photo'
-                )
-
-        if replicate_model['output_type'] == 'text':
-            parts = []
-            for part in result:
-                await botnav.send_chat_action(message.chat.id, 'typing')
-                parts.append(part)
-
-                if len(parts) > 500:
-                    await botnav.bot.send_message(message.chat.id, "".join(parts))
-                    parts = []
-            await botnav.bot.send_message(message.chat.id, "".join(parts))
-
-        if replicate_model['output_type'] == 'file':
-            if isinstance(result, FileOutput):
-                document = await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    download_file(result.url),
-                    'upload_document'
-                )
-
-                await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_document(message.chat.id, document, timeout=120),
-                    'upload_document'
-                )
-            elif isinstance(result, list):
-                for document_url in result:
-                    document = botnav.await_coro_sending_action(
-                        message.chat.id,
-                        download_file(document_url),
-                        'upload_document'
-                    )
-
-                    await botnav.await_coro_sending_action(
-                        message.chat.id,
-                        botnav.bot.send_document(message.chat.id, document, timeout=120),
-                        'upload_document'
-                    )
-            elif isinstance(result, str):
-                    document = await botnav.await_coro_sending_action(
-                        message.chat.id,
-                        download_file(result),
-                        'upload_document'
-                    )
-
-                    await botnav.await_coro_sending_action(
-                        message.chat.id,
-                        botnav.bot.send_document(message.chat.id, document, timeout=120),
-                        'upload_document'
-                    )
+        await replicate_execute_and_send(botnav, message, replicate_model_name, input_data)
     except ModelError as exc:
         await botnav.bot.send_message(message.chat.id, f"Model error occurred: {exc}")
     except Exception as exc:
