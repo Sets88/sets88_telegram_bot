@@ -206,7 +206,7 @@ def set_role(botnav: TeleBotNav, message: Message, conversation: ConversationMan
     if 'model' in CHAT_ROLES[role]:
         model: LLMModel = CHAT_ROLES[role]['model']
 
-        if is_model_allowed(botnav, message, model):
+        if is_llm_model_allowed(botnav, message, model):
             conversation.set_model(model)
         else:
             conversation.set_model(AVAILABLE_LLM_MODELS[DEFAULT_MODEL])
