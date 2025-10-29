@@ -7,5 +7,14 @@
     "REPLICATE_API_KEY": "",
     "YT_DL_DIR": "/var/data/uploads",
     "YT_DL_URL": "https://somehost.com/uploads",
-    "SCHEDULES": 1
+    "SCHEDULES": 1,
+    "USER_PERMISSIONS": {
+        "default": {
+            "is_admin": true,
+            "can_use_tools": true,
+            "can_use_ollama_llm_models": true,
+            "can_use_replicate_models": true,
+            "exclude_replicate_models": []
+        }
+    }
 }

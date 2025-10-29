@@ -4,6 +4,7 @@ import functools
 from io import BytesIO
 from copy import copy
 from typing import Any
+import mimetypes
 
 from telebot.types import Message
 import replicate
@@ -11,6 +12,7 @@ from replicate.helpers import FileOutput
 from replicate.exceptions import ModelError
 import aiohttp
 
+from lib.permissions import get_permission, is_permitted
 import config
 from telebot_nav import TeleBotNav
 from logger import logger
@@ -101,36 +103,16 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'sdxl-controlnet-lora': {
-        'description': 'SDXL Canny controlnet with LoRA support.',
-        'replicate_id': 'batouresearch/sdxl-controlnet-lora:a65bcd11a0db0f9cd33d6bf2a76925235c45450c71f38c1150b932a72e50a7f9',
+    'qwen-image-edit': {
+        'description': 'The latest Qwen-Image’s iteration with improved multi-image editing, single-image consistency, and native support for ControlNet',
+        'replicate_id': 'qwen/qwen-image-edit-plus',
+        'input_field': 'prompt',
         'input_type': 'text',
         'output_type': 'photo',
         'available_params': {
             'image': {
-                'type': 'photo',
-                'description': 'Input image'
-            }
-        }
-    },
-    'blip-2': {
-        'description': 'Blip, bootstrapping Language-Image Pre-training, send photo to get caption or ask question',
-        'replicate_id': 'andreasjansson/blip-2:9109553e37d266369f2750e407ab95649c63eb8e13f13b1f3983ff0feb2f9ef7',
-        'input_type': 'photo',
-        'input_field': 'image',
-        'output_type': 'text',
-        'available_params': {
-            'question': {
-                'type': 'str',
-                'description': 'Question for VQA, default is "What is this a picture of?"',
-                'default': 'What is this a picture of?'
-            },
-            'temperature': {
-                'type': 'float',
-                'description': 'Temperature for use with nucleus sampling (minimum: 0.5; maximum: 1) default is 1',
-                'default': 1,
-                'min': 0.5,
-                'max': 1,
+                'type': 'photo_list',
+                'description': 'Input images'
             }
         }
     },
@@ -192,94 +174,62 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'styleclip': {
-        'description': 'StyleCLIP, Text-Driven Manipulation of StyleGAN Imagery',
-        'replicate_id': 'orpatashnik/styleclip:7af9a66f36f97fee2fece7dcc927551a951f0022cbdd23747b9212f23fc17021',
-        'input_type': 'photo',
-        'input_field': 'input',
-        'output_type': 'photo',
-        'available_params': {
-            'neutral': {
-                'type': 'str',
-                'description': 'Neutral image description'
-            },
-            'target': {
-                'type': 'str',
-                'description': 'Target image description'
-            },
-        }
-    },
-    'controlnet-scrible': {
-        'description': 'ControlNet, generate detailed images from scribbled drawings',
-        'replicate_id': 'jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb3a3ac488595a2de23e143fdb0117',
+    'veo-3.1': {
+        'description': 'New and improved version of Veo 3, with higher-fidelity video, context-aware audio, reference image and last frame support',
+        'replicate_id': 'google/veo-3.1',
         'input_type': 'text',
         'input_field': 'prompt',
-        'output_type': 'photo',
+        'output_type': 'video',
         'available_params': {
-            'image': {
-                'type': 'photo',
-                'description': 'Mask image'
+            'reference_images': {
+                'type': 'photo_list',
+                'description': 'Input images'
             },
-        }
-    },
-    'Kandins-CN': {
-        'description': 'Kandinsky Image Generation with ControlNet Conditioning',
-        'replicate_id': 'cjwbw/kandinsky-2-2-controlnet-depth:98b54ca0b42be225e927f1dae2d9c506e69fe5b3bce301e13718d662a227a12b',
-        'input_type': 'text',
-        'input_field': 'prompt',
-        'output_type': 'photo',
-        'available_params': {
-            'image': {
-                'type': 'photo',
-                'description': 'Input image'
-            },
-            'task': {
-                'type': 'select',
-                'options': ['text2img', 'img2img'],
-                'default': 'img2img'
-            },
-            'num_inference_steps': {
+            'duration': {
                 'type': 'int',
-                'default': 70,
+                'default': 8,
                 'min': 1,
-                'max': 500,
-                'description': 'Number of inference steps, if you want to get more detailed image increase this number'
+                'max': 10,
+                'description': 'Duration of the video in seconds'
             }
         }
     },
-    'controlnet-hed': {
-        'description': 'ControlNet, modify images using HED maps',
-        'replicate_id': 'jagilley/controlnet-hed:cde353130c86f37d0af4060cd757ab3009cac68eb58df216768f907f0d0a0653',
+    'veo-3.1-fast': {
+        'description': 'New and improved version of Veo 3 Fast, with higher-fidelity video, context-aware audio and last frame support',
+        'replicate_id': 'google/veo-3.1-fast',
         'input_type': 'text',
         'input_field': 'prompt',
-        'output_type': 'photo',
-        'available_params': {
-            'input_image': {
-                'type': 'photo',
-                'description': 'Input image'
-            },
-        }
-    },
-    'controlnet-normal': {
-        'description': 'ControlNet, modify images using normal maps',
-        'replicate_id': 'jagilley/controlnet-normal:cc8066f617b6c99fdb134bc1195c5291cf2610875da4985a39de50ee1f46d81c',
-        'input_type': 'text',
-        'input_field': 'prompt',
-        'output_type': 'photo',
+        'output_type': 'video',
         'available_params': {
             'image': {
                 'type': 'photo',
                 'description': 'Input image'
             },
+            'duration': {
+                'type': 'int',
+                'default': 8,
+                'min': 1,
+                'max': 10,
+                'description': 'Duration of the video in seconds'
+            }
         }
-    },
-    'img2prompt': {
-        'description': 'Get an approximate text prompt, with style, matching an image. (Optimized for stable-diffusion (clip ViT-L/14))',
-        'replicate_id': 'methexis-inc/img2prompt:50adaf2d3ad20a6f911a8a9e3ccf777b263b8596fbd2c8fc26e8888f8a0edbb5',
-        'input_type': 'photo',
-        'output_type': 'text'
     }
 }
+
+
+def get_model_params(telebot_nav: TeleBotNav, message: Message, model_name: str) -> dict[str, Any]:
+    if model_name not in REPLICATE_MODELS:
+        return {}
+
+    if not is_permitted(telebot_nav, message, 'can_use_replicate_models'):
+        return {}
+
+    exclude_models = get_permission(telebot_nav, message, 'exclude_replicate_models')
+
+    if exclude_models and model_name in exclude_models:
+        return {}
+
+    return REPLICATE_MODELS[model_name]
 
 
 def replicate_execute(replicate_id: str, input_data: dict):
@@ -292,10 +242,11 @@ def replicate_execute(replicate_id: str, input_data: dict):
 
 
 async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model_name: str, input_data: dict[str, Any]):
-    if model_name not in REPLICATE_MODELS:
+    replicate_model = get_model_params(botnav, message, model_name)
+
+    if not replicate_model:
         raise ValueError(f'Unknown model {model_name}')
 
-    replicate_model = REPLICATE_MODELS[model_name]
     result = await botnav.await_coro_sending_action(
         message.chat.id,
         asyncio.to_thread(replicate_execute, replicate_model['replicate_id'], input_data),
@@ -310,6 +261,14 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                     botnav.bot.send_photo(message.chat.id, photo),
                     'upload_photo'
                 )
+    if replicate_model['output_type'] == 'video':
+        if isinstance(result, list):
+            for video in result:
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_video(message.chat.id, video),
+                    'upload_video'
+                )
         elif isinstance(result, str):
             await botnav.await_coro_sending_action(
                 message.chat.id,
@@ -317,11 +276,31 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                 'upload_photo'
             )
         elif isinstance(result, FileOutput):
-            await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_photo(message.chat.id, result.read()),
-                'upload_photo'
-            )
+            mime_type, _ = mimetypes.guess_type(result.url)
+            if mime_type and mime_type.startswith('video'):
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_video(message.chat.id, result.url),
+                    'upload_video'
+                )
+            elif mime_type and mime_type.startswith('image'):
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_photo(message.chat.id, result.url),
+                    'upload_photo'
+                )
+            else:
+                document = await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    download_file(result.url),
+                    'upload_document'
+                )
+
+                await botnav.await_coro_sending_action(
+                    message.chat.id,
+                    botnav.bot.send_document(message.chat.id, document, timeout=120),
+                    'upload_document'
+                )
 
     if replicate_model['output_type'] == 'text':
         parts = []
@@ -417,10 +396,10 @@ async def replicate_set_input_param(param_name: str, botnav: TeleBotNav, message
 async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav, message: Message):
     model_name, param_name = model_name_param_name.split(':')
 
-    if model_name not in REPLICATE_MODELS:
-        return
+    model = get_model_params(botnav, message, model_name)
 
-    model = REPLICATE_MODELS[model_name]
+    if not model:
+        return
 
     if param_name not in model['available_params']:
         return
@@ -536,17 +515,16 @@ async def replicate_print_params_buttons(botnav: TeleBotNav, message: Message):
 
 
 async def replicate_choose_model(model_name: str, botnav: TeleBotNav, message: Message) -> None:
-    if model_name not in REPLICATE_MODELS:
+    model = get_model_params(botnav, message, model_name)
+    if not model:
         return
-
-    model = REPLICATE_MODELS[model_name]
 
     default_params = copy(model.get('default_params', {}))
 
     message.state_data['replicate_model'] = model_name
     message.state_data['replicate_params'] = default_params
 
-    await botnav.bot.send_message(message.chat.id, "Model was set to: " + REPLICATE_MODELS[model_name]['description'])
+    await botnav.bot.send_message(message.chat.id, "Model has been set to: " + model['description'])
 
     if model.get('available_params'):
         await replicate_print_params_buttons(botnav, message)
@@ -570,14 +548,18 @@ def get_await_action_type(model):
         return 'typing'
     if model['output_type'] == 'file':
         return 'upload_document'
+    if model['output_type'] == 'video':
+        return 'upload_video'
+    return 'typing'
 
 
 async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> None:
     replicate_model_name = message.state_data.get('replicate_model', None)
-    if not replicate_model_name:
-        return
 
-    replicate_model = REPLICATE_MODELS[replicate_model_name]
+    replicate_model = get_model_params(botnav, message, replicate_model_name)
+
+    if not replicate_model:
+        return
 
     input_data = message.state_data.get('replicate_params', {})
 
@@ -609,7 +591,7 @@ async def start_replicate(botnav: TeleBotNav, message: Message) -> None:
     await botnav.print_buttons(
         message.chat.id,
         {
-            x: functools.partial(replicate_choose_model, x) for x in REPLICATE_MODELS.keys()
+            x: functools.partial(replicate_choose_model, x) for x in REPLICATE_MODELS.keys() if get_model_params(botnav, message, x)
         },
         row_width=2,
         text='Choose model:'

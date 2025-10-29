@@ -16,6 +16,7 @@ import config
 from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType, Tool, LLMModel
 from lib.llm import ToolParameter
 from lib.llm import openai_instance
+from lib.permissions import is_llm_model_allowed, is_permitted
 from lib.utils import MessageSplitter, ConvEncoder
 from telebot_nav import TeleBotNav
 from logger import logger
@@ -157,20 +158,26 @@ DEFAULT_MAX_TOKENS = 4096
 CONV_PATH = os.path.join(os.path.dirname(__file__), "conv")
 
 
-def get_available_models() -> list[LLMModel]:
-    available_models: list[LLMModel] = []
-    for model in AVAILABLE_LLM_MODELS.values():
+def get_available_models(botnav: TeleBotNav, message: Message) -> dict[str, LLMModel]:
+    available_models: dict[str, LLMModel] = {}
+    for name, model in AVAILABLE_LLM_MODELS.items():
         if model.provider == AIProvider.OPENAI and not config.OPENAI_API_KEY:
             continue
         if model.provider == AIProvider.ANTHROPIC and not config.ANTHROPIC_API_KEY:
             continue
-        available_models.append(model)
+        if model.provider == AIProvider.OLLAMA and not config.OLLAMA_HOST:
+            continue
+
+        if not is_llm_model_allowed(botnav, message, model):
+            continue
+
+        available_models[name] = model
     return available_models
 
 
 def get_or_create_conversation(botnav: TeleBotNav, message: Message) -> ConversationManager:
     if 'conversation' not in message.state_data:
-        message.state_data['conversation'] = get_new_conversation_manager(message)
+        message.state_data['conversation'] = get_new_conversation_manager(botnav, message)
     return message.state_data['conversation']
 
 
@@ -184,7 +191,7 @@ def save_conversation_to_file(user: str, conversation: ConversationManager) -> N
     )
 
 
-def set_role(message: Message, conversation: ConversationManager, role: str) -> None:
+def set_role(botnav: TeleBotNav, message: Message, conversation: ConversationManager, role: str) -> None:
     if role not in CHAT_ROLES:
         role = DEFAULT_ROLE
 
@@ -198,18 +205,25 @@ def set_role(message: Message, conversation: ConversationManager, role: str) -> 
         conversation.set_config_param('thinking', CHAT_ROLES[role]['thinking'])
     if 'model' in CHAT_ROLES[role]:
         model: LLMModel = CHAT_ROLES[role]['model']
-        conversation.set_model(model)
+
+        if is_model_allowed(botnav, message, model):
+            conversation.set_model(model)
+        else:
+            conversation.set_model(AVAILABLE_LLM_MODELS[DEFAULT_MODEL])
     else:
         conversation.set_model(AVAILABLE_LLM_MODELS[DEFAULT_MODEL])
 
 
-def get_new_conversation_manager(message: Message) -> ConversationManager:
+def get_new_conversation_manager(botnav: TeleBotNav, message: Message) -> ConversationManager:
     manager = ConversationManager()
 
-    set_role(message, manager, DEFAULT_ROLE)
+    set_role(botnav, message, manager, DEFAULT_ROLE)
     manager.set_config_param('max_tokens', DEFAULT_MAX_TOKENS)
-    manager.set_config_param('tools', DEFAULT_TOOLS)
-    manager.set_user_id(message.from_user.id)
+
+    if is_permitted(botnav, message, 'can_use_tools'):
+        manager.set_config_param('tools', DEFAULT_TOOLS)
+
+    manager.set_user_id(botnav.get_user(message).id)
 
     return manager
 
@@ -245,7 +259,7 @@ class WhisperHelper:
 class LLMRouter:
     @classmethod
     async def reset_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
-        message.state_data['conversation'] = get_new_conversation_manager(message)
+        message.state_data['conversation'] = get_new_conversation_manager(botnav, message)
         await botnav.bot.send_message(message.chat.id, "Conversation was reset")
 
     ## Options handlers
@@ -325,7 +339,7 @@ class LLMRouter:
             f"{model.name} ({model.provider.value})": functools.partial(
                 cls.switch_llm_model,
                 model
-            ) for model in get_available_models()
+            ) for model in get_available_models(botnav, message).items()
         }
         buttons['⬅️ Back'] = cls.show_chat_options
 
@@ -339,7 +353,9 @@ class LLMRouter:
     @classmethod
     async def switch_llm_model(cls, model: LLMModel, botnav: TeleBotNav, message: Message) -> None:
         conversation = get_or_create_conversation(botnav, message)
-        conversation.set_model(model)
+
+        if is_llm_model_allowed(botnav, message, model):
+            conversation.set_model(model)
 
         await cls.show_chat_options(botnav, message)
 
@@ -360,7 +376,7 @@ class LLMRouter:
     @classmethod
     async def set_role(cls, role: str, botnav: TeleBotNav, message: Message) -> None:
         conversation = get_or_create_conversation(botnav, message)
-        set_role(message, conversation, role)
+        set_role(botnav, message, conversation, role)
 
         conversation.set_config_param('system_prompt', CHAT_ROLES[role]['system_prompt'])
         if 'one_off' in CHAT_ROLES[role]:
