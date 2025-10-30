@@ -336,10 +336,10 @@ class LLMRouter:
     @classmethod
     async def show_models_list(cls, botnav: TeleBotNav, message: Message) -> None:
         buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]] = {
-            f"{model.name} ({model.provider.value})": functools.partial(
+            f"{name} ({model.provider.value})": functools.partial(
                 cls.switch_llm_model,
                 model
-            ) for model in get_available_models(botnav, message).items()
+            ) for name, model in get_available_models(botnav, message).items()
         }
         buttons['⬅️ Back'] = cls.show_chat_options
 
