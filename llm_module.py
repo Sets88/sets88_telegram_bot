@@ -98,6 +98,7 @@ CHAT_ROLES = {
 
 
 async def image_generation_tool(
+    conversation: ConversationManager,
     botnav: TeleBotNav,
     message: Message,
     model: Literal['flux-pro'],
@@ -106,7 +107,6 @@ async def image_generation_tool(
     input_data = {
         'prompt': prompt
     }
-
     try:
         await replicate_execute_and_send(botnav, message, model, input_data)
     except Exception as exc:
@@ -117,7 +117,29 @@ async def image_generation_tool(
     return 'true'
 
 
-async def get_current_time(botnav: TeleBotNav, message: Message) -> str:
+async def add_to_user_memory_tool(
+    conversation: ConversationManager,
+    botnav: TeleBotNav,
+    message: Message,
+    key: str,
+    value: str
+) -> str:
+    if len(key) > 20 or len(value) > 1000:
+        return 'false'
+
+    if not key.isascii() or not all(c.isalnum() or c == '_' for c in key):
+        return 'false'
+
+    conversation.add_memory(key, value)
+
+    return 'true'
+
+
+async def get_current_time(
+    conversation: ConversationManager,
+    botnav: TeleBotNav,
+    message: Message
+) -> str:
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
@@ -139,6 +161,7 @@ DEFAULT_TOOLS = [
         name='image_generation_tool',
         description='Generates an image and sends it to user based on the provided prompt, returns true if successful',
         function=image_generation_tool,
+        is_enabled_fn=lambda conversation: config.REPLICATE_API_KEY is not None,
         schema={
             'model': ToolParameter(
                 name='model', description='The image generation model to use',
@@ -146,6 +169,27 @@ DEFAULT_TOOLS = [
             ),
             'prompt': ToolParameter(
                 name='prompt', description='The prompt to generate the image from',
+                ptype=str, required=True
+            )
+        }
+    ),
+    Tool(
+        type='function',
+        providers=[AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA],
+        name='save_to_memory',
+        description='Saves facts about user as key-value pair to the user memory, where key is a short to represent it to user'
+            'and value is the actual information to remember with short description, returns true if successful',
+        function=add_to_user_memory_tool,
+        is_enabled_fn=lambda conversation: conversation.config.memory,
+        schema={
+            'key': ToolParameter(
+                name='key', description='The key is the short name to represent the memory, '
+                    'like language, timezone, birthdate etc. max 20 characters latin letters or _',
+                ptype=str, required=True
+            ),
+            'value': ToolParameter(
+                name='value', description='The value is the actual information to remember'
+                    'with short description within 1000 characters max',
                 ptype=str, required=True
             )
         }
@@ -222,6 +266,9 @@ def get_new_conversation_manager(botnav: TeleBotNav, message: Message) -> Conver
 
     if is_permitted(botnav, message, 'can_use_tools'):
         manager.set_config_param('tools', DEFAULT_TOOLS)
+
+    if is_permitted(botnav, message, 'can_use_memory_tool'):
+        manager.set_config_param('memory', True)
 
     manager.set_user_id(botnav.get_user(message).id)
 
@@ -347,6 +394,7 @@ class LLMRouter:
             message.chat.id,
             buttons,
             message_to_rewrite=message,
+            text='Available models:',
             row_width=1,
         )
 
@@ -370,6 +418,7 @@ class LLMRouter:
             message.chat.id,
             buttons,
             message_to_rewrite=message,
+            text='Available roles:',
             row_width=2,
         )
 
@@ -383,6 +432,76 @@ class LLMRouter:
             conversation.set_config_param('one_off', CHAT_ROLES[role]['one_off'])
 
         await cls.show_chat_options(botnav, message)
+
+    @classmethod
+    async def show_memory_list(cls, botnav: TeleBotNav, message: Message) -> None:
+        conversation = get_or_create_conversation(botnav, message)
+
+        if not conversation.memory:
+            conversation.load_memory()
+
+        memory_status = "✅" if conversation.config.memory else "❌"
+        is_empty = not conversation.memory
+
+        buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]] = {
+            x: functools.partial(cls.show_memory, x) for x in conversation.memory.keys()
+        }
+        buttons[f'🧠 Toggle Memory {memory_status}'] = cls.toggle_memory
+        buttons['⬅️ Back'] = cls.show_chat_options
+
+        await botnav.print_buttons(
+            message.chat.id,
+            buttons,
+            row_width=1,
+            message_to_rewrite=message,
+            text='User memory:' if not is_empty else 'User memory is empty.'
+        )
+
+    @classmethod
+    async def show_memory(cls, key: str, botnav: TeleBotNav, message: Message) -> None:
+        conversation = get_or_create_conversation(botnav, message)
+
+        if not conversation.memory or key not in conversation.memory:
+            return
+
+        value = conversation.memory.get(key, '')
+
+        await botnav.print_buttons(
+            message.chat.id,
+            {
+                '🗑️ Delete': functools.partial(cls.delete_memory, key),
+                '⬅️ Back': cls.show_memory_list
+            },
+            row_width=1,
+            message_to_rewrite=message,
+            text=f"Memory key: {key}\nValue: {value}"
+        )
+
+    @classmethod
+    async def delete_memory(cls, key: str, botnav: TeleBotNav, message: Message) -> None:
+        conversation = get_or_create_conversation(botnav, message)
+
+        if not conversation.memory or key not in conversation.memory:
+            return
+
+        if key in conversation.memory:
+            conversation.delete_memory(key)
+
+        await botnav.bot.send_message(
+            message.chat.id,
+            f"Memory key: {key} deleted"
+        )
+        await cls.show_memory_list(botnav, message)
+
+    @classmethod
+    async def toggle_memory(cls, botnav: TeleBotNav, message: Message) -> None:
+        if not is_permitted(botnav, message, 'can_use_memory_tool'):
+            return
+
+        conversation = get_or_create_conversation(botnav, message)
+        conversation.config.memory = not conversation.config.memory
+
+        await cls.show_memory_list(botnav, message)
 
     @classmethod
     async def show_help(cls, botnav: TeleBotNav, message: Message) -> None:
@@ -401,6 +520,8 @@ class LLMRouter:
         conversation_length = len(conversation.messages)
         role = message.state_data.get('current_role', DEFAULT_ROLE)
         model = conversation.config.model
+        memory_permited = is_permitted(botnav, message, 'can_use_memory_tool')
+        memory_enabled = "✅" if conversation.config.memory else "❌"
 
         await botnav.print_buttons(
             message.chat.id,
@@ -412,6 +533,7 @@ class LLMRouter:
                 f'🧹 Clean conversation({conversation_length})': cls.clean_conversation,
                 f'🤖 Model({model.name})': cls.show_models_list,
                 f'👥 Role({role})': cls.show_roles_list,
+                f'💾 Memory {memory_enabled}': cls.show_memory_list if memory_permited else None,
                 '❓ Help': cls.show_help,
             },
             row_width=1,
@@ -533,7 +655,7 @@ class LLMRouter:
                 '🔄 Reset conversation': cls.reset_conversation,
                 '⚙️ Options': cls.show_chat_options,
             },
-            'Additional options:',
+            'Welcome to LLM Chat, lets chat!\nAdditional options:',
             row_width=1
         )
 
@@ -541,7 +663,6 @@ class LLMRouter:
         botnav.add_command(message, 'chat_gpt_reset', '🔄 Reset conversation', cls.reset_conversation)
         botnav.add_command(message, 'chat_gpt_clean', '🧹 Clean conversation', cls.clean_conversation)
         botnav.add_command(message, 'chat_gpt_options', '⚙️ Chat gpt Options', cls.show_chat_options)
-        await botnav.bot.send_message(message.chat.id, 'Welcome to Chat GPT, lets chat!')
         botnav.set_default_handler(message, cls.chat_message_handler)
         botnav.clean_next_handler(message)
         await botnav.send_commands(message)

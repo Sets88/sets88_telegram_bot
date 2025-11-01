@@ -38,6 +38,7 @@ async def yt_format(botnav: TeleBotNav, message: Message) -> None:
             'Audio+Video': functools.partial(yt_set_format, 'mp4/bestaudio/best'),
             'Audio Only': functools.partial(yt_set_format, 'm4a[vcodec=none]'),
         },
+        'Select format:',
         message_to_rewrite=message,
         row_width=2
     )

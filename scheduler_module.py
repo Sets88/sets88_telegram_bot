@@ -1,4 +1,5 @@
 import asyncio
+from email.mime import text
 import os
 import operator
 from typing import Any
@@ -292,6 +293,7 @@ class ListSchedulesRouter:
             botnav.get_user(message).id,
             buttons,
             cls.format_md_schedule_description(schedule),
+            text='Schedule options:',
             row_width=2,
             parse_mode='MarkdownV2'
         )

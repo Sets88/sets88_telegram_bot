@@ -21,6 +21,11 @@ HELP_CONTENT = """
 • Removes all message history in current conversation
 • Useful when changing topics or when context becomes too long
 
+**💾 Memory** - AI memory management
+• AI remembers your preferences, settings, and personal information
+• Access via Options → Memory to view or delete stored information
+• AI automatically saves relevant details during conversations
+
 **🤖 Model** - AI model selection
 • GPT-4.1-mini: Fast and economical model
 • GPT-4.1: More powerful model with better response quality

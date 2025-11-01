@@ -9,6 +9,7 @@ docker run -d \
     -v $(pwd)/conv:/app/conv \
     -v $(pwd)/schedules:/app/schedules \
     -v $(pwd)/uploads:/app/uploads \
+    -v $(pwd)/memort:/app/memory \
     -v $(pwd)/config.json:/app/config.json \
     -v $(pwd)/log.txt:/app/log.txt \
     gptchat_bot

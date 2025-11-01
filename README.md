@@ -8,6 +8,7 @@ Personal Telegram bot with a comprehensive AI assistant platform:
 
 ## 🛠️ Advanced Features
 - **Function Calling & Tools**: LLM models can call functions, generate images, search web
+- **Memory System**: AI remembers user preferences and information across conversations
 - **Video Generation**: Google Veo 3.1 models with context-aware audio
 - **Voice Processing**: Speech-to-text with Whisper, multi-modal conversations
 - **Image Analysis**: Upload and analyze images with AI

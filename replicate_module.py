@@ -253,54 +253,58 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
         get_await_action_type(replicate_model)
     )
 
-    if replicate_model['output_type'] == 'photo':
-        if isinstance(result, list):
-            for photo in result:
-                await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_photo(message.chat.id, photo),
-                    'upload_photo'
-                )
-    if replicate_model['output_type'] == 'video':
-        if isinstance(result, list):
-            for video in result:
-                await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_video(message.chat.id, video),
-                    'upload_video'
-                )
-        elif isinstance(result, str):
+    if isinstance(result, list) and replicate_model['output_type'] == 'video':
+        for video in result:
             await botnav.await_coro_sending_action(
                 message.chat.id,
-                botnav.bot.send_photo(message.chat.id, result),
+                botnav.bot.send_video(message.chat.id, video),
+                'upload_video'
+            )
+    elif isinstance(result, list) and replicate_model['output_type'] == 'photo':
+        for photo in result:
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_photo(message.chat.id, photo),
                 'upload_photo'
             )
-        elif isinstance(result, FileOutput):
-            mime_type, _ = mimetypes.guess_type(result.url)
-            if mime_type and mime_type.startswith('video'):
-                await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_video(message.chat.id, result.url),
-                    'upload_video'
-                )
-            elif mime_type and mime_type.startswith('image'):
-                await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_photo(message.chat.id, result.url),
-                    'upload_photo'
-                )
-            else:
-                document = await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    download_file(result.url),
-                    'upload_document'
-                )
+    elif isinstance(result, str) and replicate_model['output_type'] == 'photo':
+        await botnav.await_coro_sending_action(
+            message.chat.id,
+            botnav.bot.send_photo(message.chat.id, result),
+            'upload_photo'
+        )
+    elif isinstance(result, str) and replicate_model['output_type'] == 'video':
+        await botnav.await_coro_sending_action(
+            message.chat.id,
+            botnav.bot.send_video(message.chat.id, result),
+            'upload_video'
+        )
+    elif isinstance(result, FileOutput):
+        mime_type, _ = mimetypes.guess_type(result.url)
+        if mime_type and mime_type.startswith('video'):
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_video(message.chat.id, result.url),
+                'upload_video'
+            )
+        elif mime_type and mime_type.startswith('image'):
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_photo(message.chat.id, result.url),
+                'upload_photo'
+            )
+        else:
+            document = await botnav.await_coro_sending_action(
+                message.chat.id,
+                download_file(result.url),
+                'upload_document'
+            )
 
-                await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_document(message.chat.id, document, timeout=120),
-                    'upload_document'
-                )
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_document(message.chat.id, document, timeout=120),
+                'upload_document'
+            )
 
     if replicate_model['output_type'] == 'text':
         parts = []

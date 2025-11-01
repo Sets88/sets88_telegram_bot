@@ -1,4 +1,5 @@
 import json
+import os
 from time import time
 from enum import Enum
 from typing import Any, Callable, get_args, Literal
@@ -65,6 +66,7 @@ class Tool:
     description: str | None = None,
     schema: dict[str, ToolParameter] | None = None,
     params: dict[str, Any] | None = None
+    is_enabled_fn: Callable[['ConversationManager'], bool] | None = None
 
 
 @dataclass
@@ -87,23 +89,26 @@ class ConversationConfig:
     one_off: bool = False
     thinking: bool = False
     tools: list[Tool] | None = None
+    memory: bool = False
 
 
 class RequestDataConverter(ABC):
+    def __init__(self, conversation_manager: 'ConversationManager') -> None:
+        self.conversation_manager = conversation_manager
+
     @abstractmethod
     def messages_to_provider_format(
         self,
-        config: ConversationConfig,
         messages: list[UniversalMessage]
     ) -> list[dict[str, Any]]:
         pass
 
     @abstractmethod
-    def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
+    def get_tools(self) -> list[dict[str, Any]] | None:
         pass
 
     @abstractmethod
-    def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
+    def get_request_parameters(self) -> dict[str, Any]:
         pass
 
 
@@ -123,14 +128,16 @@ def get_type_data(ptype: type) -> tuple[str, tuple[str] | None]:
 class OpenAIConverter(RequestDataConverter):
     def messages_to_provider_format(
         self,
-        config: ConversationConfig,
         messages: list[UniversalMessage]
     ) -> list[dict[str, Any]]:
         result_message: list[dict[str, Any]] = []
 
+        system_prompt = self.conversation_manager.get_system_prompt()
+        model = self.conversation_manager.config.model
+
         result_message.append({
             "role": MessageRole.SYSTEM.value,
-            "content": config.system_prompt or "You are a helpful assistant"
+            "content": system_prompt or "You are a helpful assistant"
         })
 
         for msg in messages:
@@ -142,7 +149,7 @@ class OpenAIConverter(RequestDataConverter):
                     "content": msg.content
                 }
 
-            elif msg.content_type == MessageType.IMAGE and config.model.image_input_supported:
+            elif msg.content_type == MessageType.IMAGE and model.image_input_supported:
                 message = {
                     "role": msg.role.value,
                     "content": [{
@@ -151,7 +158,7 @@ class OpenAIConverter(RequestDataConverter):
                     }]
                 }
 
-            elif msg.content_type == MessageType.TOOL_USE and config.model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling_supported:
                 message = {
                     "type": "function_call",
                     "call_id": msg.tool_call_id,
@@ -159,7 +166,7 @@ class OpenAIConverter(RequestDataConverter):
                     "arguments": json.dumps(msg.tool_call_params)
                 }
 
-            if msg.content_type == MessageType.TOOL_RESULT and config.model.tool_calling_supported:
+            if msg.content_type == MessageType.TOOL_RESULT and model.tool_calling_supported:
                 message = {
                     "type": "function_call_output",
                     "call_id": msg.tool_call_id,
@@ -195,14 +202,19 @@ class OpenAIConverter(RequestDataConverter):
 
         return params
 
-    def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
-        if not config.model or not config.model.tool_calling_supported:
+    def get_tools(self) -> list[dict[str, Any]] | None:
+        llm_config = self.conversation_manager.config
+
+        if not llm_config.model or not llm_config.model.tool_calling_supported:
             return None
 
         tools: list[dict[str, Any]] = []
 
-        for tool in config.tools or []:
+        for tool in llm_config.tools or []:
             if AIProvider.OPENAI not in tool.providers:
+                continue
+
+            if tool.is_enabled_fn and not tool.is_enabled_fn(self.conversation_manager):
                 continue
 
             tool_data: dict[str, Any] = {}
@@ -222,27 +234,29 @@ class OpenAIConverter(RequestDataConverter):
             tools.append(tool_data)
         return tools
 
-    def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
+    def get_request_parameters(self) -> dict[str, Any]:
+        conversation = self.conversation_manager
+        model = conversation.config.model
+
         provider_messages: list[dict[str, Any]] = self.messages_to_provider_format(
-            conversation.config,
             conversation.messages
         )
 
         request_data: dict[str, Any] = {
-            "model": conversation.config.model.name,
+            "model": model.name,
             "input": provider_messages,
             "max_output_tokens": conversation.config.max_tokens,
             "stream": True
         }
 
-        if conversation.config.model.tool_calling_supported:
-            tools = self.get_tools(conversation.config)
+        if model.tool_calling_supported:
+            tools = self.get_tools()
             request_data["tools"] = tools
 
         if conversation.user_id:
             request_data["user"] = md5(f'aaa-{conversation.user_id}-bbb'.encode('utf-8')).hexdigest()
 
-        if conversation.config.thinking and conversation.config.model.thinking_supported:
+        if conversation.config.thinking and model.thinking_supported:
             request_data['reasoning'] = {'effort': 'medium'}
 
         return request_data
@@ -251,14 +265,17 @@ class OpenAIConverter(RequestDataConverter):
 class OllamaConverter(RequestDataConverter):
     def messages_to_provider_format(
         self,
-        config: ConversationConfig,
         messages: list[UniversalMessage]
     ) -> list[dict[str, Any]]:
         result_messages: list[dict[str, Any]] = []
 
+        system_prompt = self.conversation_manager.get_system_prompt()
+
+        model = self.conversation_manager.config.model
+
         result_messages.append({
             "role": MessageRole.SYSTEM.value,
-            "content": config.system_prompt or "You are a helpful assistant"
+            "content": system_prompt or "You are a helpful assistant"
         })
 
         for msg in messages:
@@ -268,7 +285,7 @@ class OllamaConverter(RequestDataConverter):
                     "content": msg.content
                 })
 
-            elif msg.content_type == MessageType.IMAGE and config.model.image_input_supported:
+            elif msg.content_type == MessageType.IMAGE and model.image_input_supported:
                 # Remove the "data:image/jpeg;base64," prefix if present
                 image = msg.content[msg.content.index(',') +1 :]
 
@@ -278,7 +295,7 @@ class OllamaConverter(RequestDataConverter):
                     "images": [image]
                 })
 
-            elif msg.content_type == MessageType.TOOL_USE and config.model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling_supported:
                 result_messages.append({
                     "role": MessageRole.ASSISTANT.value,
                     "content": "",
@@ -288,7 +305,7 @@ class OllamaConverter(RequestDataConverter):
                     }
                 })
 
-            elif msg.content_type == MessageType.TOOL_RESULT and config.model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_RESULT and model.tool_calling_supported:
                 result_messages.append({
                     "role": MessageRole.TOOL.value,
                     "content": msg.content,
@@ -323,11 +340,15 @@ class OllamaConverter(RequestDataConverter):
 
         return params
 
-    def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
+    def get_tools(self) -> list[dict[str, Any]] | None:
+        llm_config = self.conversation_manager.config
         tools: list[dict[str, Any]] = []
 
-        for tool in config.tools or []:
+        for tool in llm_config.tools or []:
             if AIProvider.OLLAMA not in tool.providers:
+                continue
+
+            if tool.is_enabled_fn and not tool.is_enabled_fn(self.conversation_manager):
                 continue
 
             tool_data: dict[str, Any] = {}
@@ -345,20 +366,22 @@ class OllamaConverter(RequestDataConverter):
             tools.append(tool_data)
         return tools
 
-    def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
+    def get_request_parameters(self) -> dict[str, Any]:
+        conversation = self.conversation_manager
+        model = conversation.config.model
+
         provider_messages: list[dict[str, Any]] = self.messages_to_provider_format(
-            conversation.config,
             conversation.messages
         )
 
         request_data: dict[str, Any] = {
             "messages": provider_messages,
-            "model": conversation.config.model.name,
+            "model": model.name,
             "stream": True
         }
 
-        if conversation.config.model.tool_calling_supported:
-            tools = self.get_tools(conversation.config)
+        if model.tool_calling_supported:
+            tools = self.get_tools()
             request_data["tools"] = tools
 
         if not conversation.config.thinking:
@@ -370,9 +393,10 @@ class OllamaConverter(RequestDataConverter):
 class AnthropicConverter(RequestDataConverter):
     def messages_to_provider_format(
         self,
-        config: ConversationConfig,
         messages: list[UniversalMessage]
     ) -> list[dict[str, Any]]:
+        model = self.conversation_manager.config.model
+
         result_messages: list[dict[str, Any]] = []
 
         for msg in messages:
@@ -381,7 +405,7 @@ class AnthropicConverter(RequestDataConverter):
                     "role": msg.role.value,
                     "content": msg.content
                 })
-            elif msg.content_type == MessageType.IMAGE and config.model.image_input_supported:
+            elif msg.content_type == MessageType.IMAGE and model.image_input_supported:
                 # Remove the "data:image/jpeg;base64," prefix if present
                 image = msg.content[msg.content.index(',') +1 :]
                 result_messages.append({
@@ -397,7 +421,7 @@ class AnthropicConverter(RequestDataConverter):
                         }
                     ]
                 })
-            elif msg.content_type == MessageType.TOOL_USE and config.model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling_supported:
                 result_messages.append({
                     "role": MessageRole.ASSISTANT.value,
                     "content": [
@@ -409,7 +433,7 @@ class AnthropicConverter(RequestDataConverter):
                         }
                     ]
                 })
-            elif msg.content_type == MessageType.TOOL_RESULT and config.model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_RESULT and model.tool_calling_supported:
                 result_messages.append({
                     "role": MessageRole.USER.value,
                     "content": [
@@ -451,11 +475,16 @@ class AnthropicConverter(RequestDataConverter):
 
         return params
 
-    def get_tools(self, config: ConversationConfig) -> list[dict[str, Any]] | None:
+    def get_tools(self) -> list[dict[str, Any]] | None:
+        llm_config = self.conversation_manager.config
+
         tools: list[dict[str, Any]] = []
 
-        for tool in config.tools or []:
+        for tool in llm_config.tools or []:
             if AIProvider.ANTHROPIC not in tool.providers:
+                continue
+
+            if tool.is_enabled_fn and not tool.is_enabled_fn(self.conversation_manager):
                 continue
 
             tool_data: dict[str, Any] = {
@@ -478,9 +507,11 @@ class AnthropicConverter(RequestDataConverter):
 
         return tools
 
-    def get_request_parameters(self, conversation: 'ConversationManager') -> dict[str, Any]:
+    def get_request_parameters(self) -> dict[str, Any]:
+        conversation = self.conversation_manager
+        model = conversation.config.model
+
         provider_messages: list[dict[str, Any]] = self.messages_to_provider_format(
-            conversation.config,
             conversation.messages
         )
 
@@ -489,16 +520,16 @@ class AnthropicConverter(RequestDataConverter):
         request_data: dict[str, Any] = {
             "max_tokens": max_tokens,
             "messages": provider_messages,
-            "model": conversation.config.model.name,
-            "system": conversation.config.system_prompt or "You are a helpful assistant",
+            "model": model.name,
+            "system": conversation.get_system_prompt(),
             "stream": True,
         }
 
-        if conversation.config.model.tool_calling_supported:
-            tools = self.get_tools(conversation.config)
+        if model.tool_calling_supported:
+            tools = self.get_tools()
             request_data["tools"] = tools
 
-        if conversation.config.thinking and conversation.config.model.thinking_supported:
+        if conversation.config.thinking and model.thinking_supported:
             request_data['thinking'] = {'type': 'enabled', 'budget_tokens': max_tokens - 500}
 
         return request_data
@@ -508,13 +539,14 @@ class ConversationManager:
     def __init__(self):
         self.id = round(time())
         self.converters: dict[AIProvider, RequestDataConverter] = {
-            AIProvider.OPENAI: OpenAIConverter(),
-            AIProvider.ANTHROPIC: AnthropicConverter(),
-            AIProvider.OLLAMA: OllamaConverter(),
+            AIProvider.OPENAI: OpenAIConverter(self),
+            AIProvider.ANTHROPIC: AnthropicConverter(self),
+            AIProvider.OLLAMA: OllamaConverter(self),
         }
         self.messages: list[UniversalMessage] = []
         self.config: ConversationConfig = ConversationConfig()
         self.user_id: int | None = None
+        self.memory: dict[str, Any] | None = None
 
     def set_user_id(self, user_id: int | None):
         self.user_id = user_id
@@ -524,6 +556,75 @@ class ConversationManager:
 
     def set_config_param(self, param: str, value: Any):
         self.config = replace(self.config, **{param: value})
+
+    def get_system_prompt(self) -> str:
+        prompt = "You are a helpful assistant"
+        if self.config.system_prompt:
+            prompt = self.config.system_prompt
+
+        if self.memory is None and self.config.memory:
+            self.load_memory()
+
+        if self.memory and self.config.memory:
+            prompt += "\n\nYour memory:\n"
+            for key, value in self.memory.items():
+                prompt += f"- {key}: {value}\n"
+
+        return prompt
+
+    def load_memory(self) -> None:
+        if not self.user_id:
+            return
+
+        filename = os.path.basename(f'{self.user_id}_memory.json')
+
+        full_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'memory', filename))
+
+        if not os.path.exists(full_path):
+            return
+
+        self.memory = {}
+
+        try:
+            with open(full_path, 'r') as f:
+                for key, value in json.load(f).items():
+                    self.memory[key] = value
+        except (FileNotFoundError, json.JSONDecodeError):
+            return
+        except Exception as exc:
+            logger.error(f"Error loading memory: {exc}")
+
+    def save_memory(self) -> None:
+        if self.memory is None:
+            self.load_memory()
+
+        if not self.user_id:
+            return
+
+        filename = os.path.basename(f'{self.user_id}_memory.json')
+
+        full_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'memory', filename))
+
+        try:
+            with open(full_path, 'w') as f:
+                json.dump(self.memory, f)
+        except Exception as exc:
+            logger.error(f"Error saving memory: {exc}")
+
+    def add_memory(self, key: str, value: Any) -> None:
+        if not self.user_id:
+            return
+
+        self.memory[key] = value
+        self.save_memory()
+
+    def delete_memory(self, key: str) -> None:
+        if not self.user_id:
+            return
+
+        if key in self.memory:
+            del self.memory[key]
+            self.save_memory()
 
     def add_message(
         self,
@@ -618,7 +719,10 @@ class OpenAIInstance:
             if func_call.arguments:
                 arguments = json.loads(func_call.arguments)
 
-            result = await conversation.execute_tool(func_call.name, arguments | extra_params)
+            arguments = arguments | extra_params
+            arguments['conversation'] = conversation
+
+            result = await conversation.execute_tool(func_call.name, arguments)
 
             results.append((func_call, result))
         return results
@@ -638,7 +742,7 @@ class OpenAIInstance:
         extra_params: dict[str, Any]
     ) -> AsyncGenerator[str, None]:
         for _ in range(3):
-            request_data = converter.get_request_parameters(conversation)
+            request_data = converter.get_request_parameters()
 
             try:
                 stream = await self.client.responses.create(**request_data)
@@ -717,7 +821,8 @@ class ClaudeInstance:
             if not conversation.has_tool(func_call.name):
                 continue
 
-            arguments: dict[str, Any] = func_call.input
+            arguments: dict[str, Any] = func_call.input | extra_params
+            arguments['conversation'] = conversation
 
             result = await conversation.execute_tool(func_call.name, arguments | extra_params)
 
@@ -734,7 +839,7 @@ class ClaudeInstance:
         extra_params: dict[str, Any]
     ) -> AsyncGenerator[str | None, None]:
         for _ in range(3):
-            request_data = converter.get_request_parameters(conversation)
+            request_data = converter.get_request_parameters()
 
             try:
                 stream = await self.client.messages.create(**request_data)
@@ -817,7 +922,10 @@ class OllamaInstance:
             if func_call.function.arguments:
                 arguments = func_call.function.arguments
 
-            result = await conversation.execute_tool(func_call.function.name, arguments | extra_params)
+            arguments = arguments | extra_params
+            arguments['conversation'] = conversation
+
+            result = await conversation.execute_tool(func_call.function.name, arguments)
 
             results.append((func_call, result))
         return results
@@ -829,7 +937,7 @@ class OllamaInstance:
         extra_params: dict[str, Any]
     ) -> AsyncGenerator[str, None]:
         for _ in range(3):
-            request_data = converter.get_request_parameters(conversation)
+            request_data = converter.get_request_parameters()
 
             full_response: str = ''
             function_calls: list[Any] = []

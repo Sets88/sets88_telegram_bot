@@ -132,13 +132,17 @@ class TeleBotNav:
         await self.bot.set_state(call.from_user.id, '', call.message.chat.id)
 
         async with self.bot.retrieve_data(call.from_user.id, call.message.chat.id) as state_data:
-            call.message.state_data = state_data
-            call.message.user = call.from_user
-            if call.data in self.buttons:
-                await self.buttons[call.data](self, call.message)
-            elif self.global_default_handler:
-                await self.bot.set_state(call.from_user.id, '', call.message.chat.id)
-                await self.global_default_handler(self, call.message)
+            try:
+                call.message.state_data = state_data
+                call.message.user = call.from_user
+                if call.data in self.buttons:
+                    await self.buttons[call.data](self, call.message)
+                elif self.global_default_handler:
+                    await self.bot.set_state(call.from_user.id, '', call.message.chat.id)
+                    await self.global_default_handler(self, call.message)
+            except Exception as exc:
+                await self.bot.send_message(call.message.chat.id, "Something went wrong, try again later")
+                logger.exception(exc)
 
     async def message_handler(self, message: Message) -> None:
         logger.info(f"{self.get_user(message).username} sent: {message.text}")
@@ -147,22 +151,26 @@ class TeleBotNav:
         await self.bot.set_state(message.from_user.id, '', message.chat.id)
 
         async with self.bot.retrieve_data(message.from_user.id, message.chat.id) as state_data:
-            message.state_data = state_data
-            if message.content_type == 'text' and message.text.startswith('/') and 'commands' in state_data and message.text[1:] in state_data['commands']:
-                await state_data['commands'][message.text[1:]]['func'](self, message)
-            elif state_data and 'next_handler' in state_data:
-                func = state_data.pop('next_handler')
-                await func(self, message)
-            elif state_data and 'default_handler' in state_data:
-                await state_data['default_handler'](self, message)
-            elif self.global_default_handler:
-                await self.global_default_handler(self, message)
+            try:
+                message.state_data = state_data
+                if message.content_type == 'text' and message.text.startswith('/') and 'commands' in state_data and message.text[1:] in state_data['commands']:
+                    await state_data['commands'][message.text[1:]]['func'](self, message)
+                elif state_data and 'next_handler' in state_data:
+                    func = state_data.pop('next_handler')
+                    await func(self, message)
+                elif state_data and 'default_handler' in state_data:
+                    await state_data['default_handler'](self, message)
+                elif self.global_default_handler:
+                    await self.global_default_handler(self, message)
+            except Exception as exc:
+                await self.bot.send_message(message.chat.id, "Something went wrong, try again later")
+                logger.exception(exc)
 
     async def print_buttons(
         self,
         chat_id: int,
         buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]],
-        text: str = "",
+        text: str = " ",
         message_to_rewrite: Message | None = None,
         row_width: int = 1,
         parse_mode: Optional[str] = None
@@ -175,9 +183,10 @@ class TeleBotNav:
 
         markup.add(*[InlineKeyboardButton(x, callback_data=f'{y.__hash__()}') for x, y in buttons.items() if y])
         if message_to_rewrite:
-            await self.bot.edit_message_reply_markup(
+            await self.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_to_rewrite.message_id,
+                text=text,
                 reply_markup=markup
             )
         else:
