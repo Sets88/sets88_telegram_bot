@@ -580,10 +580,10 @@ class ConversationManager:
 
         full_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'memory', filename))
 
+        self.memory = {}
+
         if not os.path.exists(full_path):
             return
-
-        self.memory = {}
 
         try:
             with open(full_path, 'r') as f:
