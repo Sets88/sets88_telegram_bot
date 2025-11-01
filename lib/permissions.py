@@ -34,12 +34,16 @@ def get_permission(botnav: TeleBotNav, message: Message, permission: str) -> Any
     if not username:
         return None
 
-    user_permissions = config.USER_PERMISSIONS.get(
-        username.lower(),
-        config.USER_PERMISSIONS.get('default', None)
-    )
+    default_permissions = config.USER_PERMISSIONS.get('default', {})
+
+    user_permissions = config.USER_PERMISSIONS.get(username.lower(), None)
 
     if not user_permissions:
-        return None
+        user_permissions = default_permissions
 
-    return user_permissions.get(permission, None)
+    permission_value = user_permissions.get(permission, None)
+
+    if permission_value is None:
+        permission_value = default_permissions.get(permission, None)
+
+    return permission_value
