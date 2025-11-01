@@ -13,6 +13,7 @@ docker run -d \
     -v $(pwd)/log.txt:/app/log.txt \
     gptchat_bot
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/memory
+docker exec -u 0 gptchat_bot chown 1000:1000 /app/conv
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/uploads
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/log.txt
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/schedules
