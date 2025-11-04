@@ -1,5 +1,6 @@
 import json
 import os
+import functools
 from time import time
 from enum import Enum
 from typing import Any, Callable, get_args, Literal
@@ -79,6 +80,7 @@ class UniversalMessage:
     tool_name: str | None = None
     tool_call_id: str | None = None
     tool_call_params: dict[str, Any] | None = None
+    image_id: str | None = None
 
 
 @dataclass
@@ -121,6 +123,8 @@ def get_type_data(ptype: type) -> tuple[str, tuple[str] | None]:
         return "number", None
     elif ptype == bool:
         return "boolean", None
+    elif ptype == list[str]:
+        return "array", None
     elif hasattr(ptype, '__origin__') and ptype.__origin__ == Literal:
         return 'string', list(get_args(ptype))
 
@@ -152,10 +156,16 @@ class OpenAIConverter(RequestDataConverter):
             elif msg.content_type == MessageType.IMAGE and model.image_input_supported:
                 message = {
                     "role": msg.role.value,
-                    "content": [{
-                        "type": "input_image",
-                        "image_url": msg.content
-                    }]
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": f"for reference only image_id is {msg.image_id}"
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": msg.content
+                        }
+                    ]
                 }
 
             elif msg.content_type == MessageType.TOOL_USE and model.tool_calling_supported:
@@ -194,6 +204,9 @@ class OpenAIConverter(RequestDataConverter):
                 'type': ptype,
                 'description': value.description,
             }
+            if ptype == "array":
+                params['properties'][key]['items'] = {'type': 'string'}
+
             if enum_list:
                 params['properties'][key]['enum'] = enum_list
 
@@ -288,7 +301,10 @@ class OllamaConverter(RequestDataConverter):
             elif msg.content_type == MessageType.IMAGE and model.image_input_supported:
                 # Remove the "data:image/jpeg;base64," prefix if present
                 image = msg.content[msg.content.index(',') +1 :]
-
+                result_messages.append({
+                    "role": msg.role.value,
+                    "content": f"for reference only image_id is {msg.image_id}"
+                })
                 result_messages.append({
                     "role": msg.role.value,
                     "content": "",
@@ -330,6 +346,8 @@ class OllamaConverter(RequestDataConverter):
                 'type': ptype,
                 'description': value.description,
             }
+            if ptype == "array":
+                params['properties'][key]['items'] = {'type': 'string'}
             if enum_list:
                 params['properties'][key]['enum'] = enum_list
                 # Not following the line above usually, so adding it to description as well
@@ -412,6 +430,10 @@ class AnthropicConverter(RequestDataConverter):
                     "role": msg.role.value,
                     "content": [
                         {
+                            'type': 'text',
+                            'text': f"for reference only image_id is {msg.image_id}"
+                        },
+                        {
                             'type': 'image',
                             'source': {
                                 'type': 'base64',
@@ -467,6 +489,8 @@ class AnthropicConverter(RequestDataConverter):
                 'type': ptype,
                 'description': value.description,
             }
+            if ptype == "array":
+                params['properties'][key]['items'] = {'type': 'string'}
             if enum_list:
                 params['properties'][key]['enum'] = enum_list
 
@@ -547,9 +571,23 @@ class ConversationManager:
         self.config: ConversationConfig = ConversationConfig()
         self.user_id: int | None = None
         self.memory: dict[str, Any] | None = None
+        self.data_cache: dict[str, str] = {}
 
     def set_user_id(self, user_id: int | None):
         self.user_id = user_id
+
+    def cache_data(self, data: str | bytes) -> str:
+        data_id = uuid.uuid4().hex
+
+        self.data_cache[data_id] = data
+
+        self.get_cached_data(data_id)
+
+        return data_id
+
+    @functools.lru_cache(maxsize=3)
+    def get_cached_data(self, data_id: str) -> str | bytes | None:
+        return self.data_cache.pop(data_id, None)
 
     def set_model(self, model: LLMModel):
         self.config = replace(self.config, model=model)
@@ -634,6 +672,7 @@ class ConversationManager:
         tool_call_id: str | None = None,
         tool_name: str | None = None,
         tool_call_params: dict[str, Any] | None = None,
+        image_id: str | None = None
     ) -> UniversalMessage:
         if self.config.one_off is True:
             self.messages.clear()
@@ -646,6 +685,7 @@ class ConversationManager:
             tool_name=tool_name,
             tool_call_id=tool_call_id,
             tool_call_params=tool_call_params,
+            image_id=image_id
         )
 
         self.messages.append(message)

@@ -3,10 +3,11 @@ import base64
 from datetime import datetime
 from typing import Callable, Coroutine
 import functools
-from typing import Any, Literal
+from typing import Any
 from io import BytesIO
 import json
 import os
+import uuid
 
 from telebot.types import Message
 from openai import RateLimitError
@@ -39,6 +40,8 @@ AVAILABLE_LLM_MODELS = {
     'gpt-oss:20b': LLMModel(AIProvider.OLLAMA, 'gpt-oss:20b', True, True, False),
     'gemma3:27b': LLMModel(AIProvider.OLLAMA, 'gemma3:27b', True, False, True),
     'qwen3:32b': LLMModel(AIProvider.OLLAMA, 'qwen3:32b', True, True, False),
+    'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', False, True, False),
+    'mistral-small3.2': LLMModel(AIProvider.OLLAMA, 'mistral-small3.2', False, True, True),
 }
 
 CHAT_ROLES = {
@@ -97,24 +100,49 @@ CHAT_ROLES = {
 }
 
 
+conversations: dict[int, ConversationManager] = {}
+
+
 async def image_generation_tool(
     conversation: ConversationManager,
     botnav: TeleBotNav,
     message: Message,
-    model: Literal['flux-pro'],
-    prompt: str
+    prompt: str,
+    images: list[str] | None = None
 ) -> str:
+    model = 'flux-pro'
     input_data = {
         'prompt': prompt
     }
+
+    if images and len(images) == 1:
+        model = 'flux-edit'
+        img_data = conversation.get_cached_data(images[0])
+
+        if not img_data:
+            return 'false'
+
+        input_data['input_image'] = BytesIO(img_data)
+
+    if images and len(images) > 1:
+        model = 'nano-banana'
+        input_data['image_input'] = []
+
+        for img_id in images:
+            img_data = conversation.get_cached_data(img_id)
+
+            if not img_data:
+                return 'false'
+
+            input_data['image_input'].append(BytesIO(img_data))
+
     try:
         await replicate_execute_and_send(botnav, message, model, input_data)
+        return 'true'
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Image generation failed, try again later")
         logger.exception(exc)
         return 'false'
-
-    return 'true'
 
 
 async def add_to_user_memory_tool(
@@ -159,17 +187,19 @@ DEFAULT_TOOLS = [
         type='function',
         providers=[AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA] if config.REPLICATE_API_KEY else [],
         name='image_generation_tool',
-        description='Generates an image and sends it to user based on the provided prompt, returns true if successful',
+        description='Generates or edits an image and sends it to user based on the provided prompt, returns true if successful',
         function=image_generation_tool,
         is_enabled_fn=lambda conversation: config.REPLICATE_API_KEY is not None,
         schema={
-            'model': ToolParameter(
-                name='model', description='The image generation model to use',
-                ptype=Literal['flux-pro'], required=True
-            ),
             'prompt': ToolParameter(
-                name='prompt', description='The prompt to generate the image from',
+                name='prompt', description='A richly detailed prompt in English designed for '
+                    'a diffusion model to generate an image',
                 ptype=str, required=True
+            ),
+            'images': ToolParameter(
+                name='images', description='List of image IDs to use as input for image generation, '
+                    'if multiple images are provided, a collage will be generated',
+                ptype=list[str], required=False
             )
         }
     ),
@@ -220,9 +250,10 @@ def get_available_models(botnav: TeleBotNav, message: Message) -> dict[str, LLMM
 
 
 def get_or_create_conversation(botnav: TeleBotNav, message: Message) -> ConversationManager:
-    if 'conversation' not in message.state_data:
-        message.state_data['conversation'] = get_new_conversation_manager(botnav, message)
-    return message.state_data['conversation']
+    user_id = botnav.get_user(message).id
+    if user_id not in conversations:
+        conversations[user_id] = get_new_conversation_manager(botnav, message)
+    return conversations[user_id]
 
 
 def save_conversation_to_file(user: str, conversation: ConversationManager) -> None:
@@ -581,10 +612,14 @@ class LLMRouter:
             )
 
         if image:
+            encoded_image = encode_jpg_image(image)
+            image_id = conversation.cache_data(image)
+
             conversation.add_message(
                 role=MessageRole.USER,
-                content=encode_jpg_image(image),
-                content_type=MessageType.IMAGE
+                content=encoded_image,
+                content_type=MessageType.IMAGE,
+                image_id=image_id
             )
 
         if message.state_data.get('delayed_message', False):
@@ -596,6 +631,11 @@ class LLMRouter:
                 'Press to send'
             )
             return
+
+        if message.content_type == 'photo'and message.media_group_id:
+            if message.caption is None:
+                return # Send request for the main image in media group
+            await asyncio.sleep(3)  # wait for possible other images in media group
 
         await cls.get_reply(botnav, message)
 
@@ -665,4 +705,5 @@ class LLMRouter:
         botnav.add_command(message, 'chat_gpt_options', '⚙️ Chat gpt Options', cls.show_chat_options)
         botnav.set_default_handler(message, cls.chat_message_handler)
         botnav.clean_next_handler(message)
+        get_or_create_conversation(botnav, message)
         await botnav.send_commands(message)
