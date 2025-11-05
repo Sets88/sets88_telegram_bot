@@ -205,8 +205,8 @@ class TeleBotNav:
         task = asyncio.create_task(coro)
 
         while not task.done():
-            await asyncio.sleep(0.1)
             await self.send_chat_action(chat_id, action)
+            await asyncio.sleep(0.5)
 
         return await task
 

@@ -28,20 +28,20 @@ from help_content import HELP_CONTENT
 DEFAULT_MODEL = 'gpt-4.1-mini'
 
 AVAILABLE_LLM_MODELS = {
-    'gpt-4.1-mini': LLMModel(AIProvider.OPENAI, 'gpt-4.1-mini', False, True, True),
-    'o4-mini': LLMModel(AIProvider.OPENAI, 'o4-mini', True, True, True),
-    'gpt-4.1': LLMModel(AIProvider.OPENAI, 'gpt-4.1', False, True, True),
-    'gpt-5-nano': LLMModel(AIProvider.OPENAI, 'gpt-5-nano', True, True, True),
-    'gpt-5': LLMModel(AIProvider.OPENAI, 'gpt-5', True, True, True),
-    'o3': LLMModel(AIProvider.OPENAI, 'o3', True, True, True),
-    'claude-haiku-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-haiku-4-5', True, True, True),
-    'claude-sonnet-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-sonnet-4-5', True, True, True),
-    'claude-opus-4-1': LLMModel(AIProvider.ANTHROPIC, 'claude-opus-4-1', True, True, True),
-    'gpt-oss:20b': LLMModel(AIProvider.OLLAMA, 'gpt-oss:20b', True, True, False),
-    'gemma3:27b': LLMModel(AIProvider.OLLAMA, 'gemma3:27b', True, False, True),
-    'qwen3:32b': LLMModel(AIProvider.OLLAMA, 'qwen3:32b', True, True, False),
-    'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', False, True, False),
-    'mistral-small3.2': LLMModel(AIProvider.OLLAMA, 'mistral-small3.2', False, True, True),
+    'gpt-4.1-mini': LLMModel(AIProvider.OPENAI, 'gpt-4.1-mini', thinking=False),
+    'o4-mini': LLMModel(AIProvider.OPENAI, 'o4-mini'),
+    'gpt-4.1': LLMModel(AIProvider.OPENAI, 'gpt-4.1', thinking=False),
+    'gpt-5-nano': LLMModel(AIProvider.OPENAI, 'gpt-5-nano'),
+    'gpt-5': LLMModel(AIProvider.OPENAI, 'gpt-5'),
+    'o3': LLMModel(AIProvider.OPENAI, 'o3'),
+    'claude-haiku-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-haiku-4-5'),
+    'claude-sonnet-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-sonnet-4-5'),
+    'claude-opus-4-1': LLMModel(AIProvider.ANTHROPIC, 'claude-opus-4-1'),
+    'gpt-oss:20b': LLMModel(AIProvider.OLLAMA, 'gpt-oss:20b', vision=False),
+    'gemma3:27b': LLMModel(AIProvider.OLLAMA, 'gemma3:27b', tool_calling=False),
+    'qwen3:32b': LLMModel(AIProvider.OLLAMA, 'qwen3:32b', vision=False),
+    'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', thinking=False, vision=False),
+    'mistral-small3.2': LLMModel(AIProvider.OLLAMA, 'mistral-small3.2', thinking=False),
 }
 
 CHAT_ROLES = {
@@ -172,7 +172,10 @@ async def get_current_time(
 
 
 DEFAULT_TOOLS = [
-    Tool(type='web_search', providers=[AIProvider.OPENAI]),
+    Tool(
+        type='web_search',
+        providers=[AIProvider.OPENAI]
+    ),
     Tool(type='web_search_20250305', providers=[AIProvider.ANTHROPIC], name='web_search', params={'max_uses': 5}),
     # Tool(type='web_fetch_20250910', providers=[AIProvider.ANTHROPIC], name='web_fetch', params={'max_uses': 5}),
     Tool(
@@ -185,9 +188,10 @@ DEFAULT_TOOLS = [
     ),
     Tool(
         type='function',
-        providers=[AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA] if config.REPLICATE_API_KEY else [],
+        providers=[AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA],
         name='image_generation_tool',
-        description='Generates or edits an image and sends it to user based on the provided prompt, returns true if successful',
+        description='Generates or edits an image and sends it to the user based on the provided prompt;'
+            'returns true if the image is successfully sent to the user.',
         function=image_generation_tool,
         is_enabled_fn=lambda conversation: config.REPLICATE_API_KEY is not None,
         schema={
@@ -337,7 +341,8 @@ class WhisperHelper:
 class LLMRouter:
     @classmethod
     async def reset_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
-        message.state_data['conversation'] = get_new_conversation_manager(botnav, message)
+        user_id = botnav.get_user(message).id
+        conversations[user_id] = get_new_conversation_manager(botnav, message)
         await botnav.bot.send_message(message.chat.id, "Conversation was reset")
 
     ## Options handlers
@@ -635,9 +640,15 @@ class LLMRouter:
         if message.content_type == 'photo'and message.media_group_id:
             if message.caption is None:
                 return # Send request for the main image in media group
-            await asyncio.sleep(3)  # wait for possible other images in media group
 
-        await cls.get_reply(botnav, message)
+            # wait for possible other images in media group
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                asyncio.sleep(3),
+                'typing'
+            )
+
+        await cls.get_reply(botnav, message),
 
     @classmethod
     async def get_reply(cls, botnav: TeleBotNav, message: Message) -> None:

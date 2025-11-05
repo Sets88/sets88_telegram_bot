@@ -45,9 +45,9 @@ class MessageType(Enum):
 class LLMModel:
     provider: AIProvider
     name: str
-    thinking_supported: bool
-    tool_calling_supported: bool
-    image_input_supported: bool
+    thinking: bool = True
+    tool_calling: bool = True
+    vision: bool = True
 
 
 @dataclass
@@ -153,22 +153,33 @@ class OpenAIConverter(RequestDataConverter):
                     "content": msg.content
                 }
 
-            elif msg.content_type == MessageType.IMAGE and model.image_input_supported:
-                message = {
-                    "role": msg.role.value,
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": f"for reference only image_id is {msg.image_id}"
-                        },
-                        {
-                            "type": "input_image",
-                            "image_url": msg.content
-                        }
-                    ]
-                }
+            elif msg.content_type == MessageType.IMAGE:
+                if model.vision:
+                    message = {
+                        "role": msg.role.value,
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": f"for reference only image_id is {msg.image_id}"
+                            },
+                            {
+                                "type": "input_image",
+                                "image_url": msg.content
+                            }
+                        ]
+                    }
+                else:
+                    message = {
+                        "role": msg.role.value,
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": f"some image provided, for reference only image_id is {msg.image_id}"
+                            },
+                        ]
+                    }
 
-            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling:
                 message = {
                     "type": "function_call",
                     "call_id": msg.tool_call_id,
@@ -176,7 +187,7 @@ class OpenAIConverter(RequestDataConverter):
                     "arguments": json.dumps(msg.tool_call_params)
                 }
 
-            if msg.content_type == MessageType.TOOL_RESULT and model.tool_calling_supported:
+            if msg.content_type == MessageType.TOOL_RESULT and model.tool_calling:
                 message = {
                     "type": "function_call_output",
                     "call_id": msg.tool_call_id,
@@ -218,7 +229,7 @@ class OpenAIConverter(RequestDataConverter):
     def get_tools(self) -> list[dict[str, Any]] | None:
         llm_config = self.conversation_manager.config
 
-        if not llm_config.model or not llm_config.model.tool_calling_supported:
+        if not llm_config.model or not llm_config.model.tool_calling:
             return None
 
         tools: list[dict[str, Any]] = []
@@ -262,14 +273,14 @@ class OpenAIConverter(RequestDataConverter):
             "stream": True
         }
 
-        if model.tool_calling_supported:
+        if model.tool_calling:
             tools = self.get_tools()
             request_data["tools"] = tools
 
         if conversation.user_id:
             request_data["user"] = md5(f'aaa-{conversation.user_id}-bbb'.encode('utf-8')).hexdigest()
 
-        if conversation.config.thinking and model.thinking_supported:
+        if conversation.config.thinking and model.thinking:
             request_data['reasoning'] = {'effort': 'medium'}
 
         return request_data
@@ -298,20 +309,26 @@ class OllamaConverter(RequestDataConverter):
                     "content": msg.content
                 })
 
-            elif msg.content_type == MessageType.IMAGE and model.image_input_supported:
-                # Remove the "data:image/jpeg;base64," prefix if present
-                image = msg.content[msg.content.index(',') +1 :]
-                result_messages.append({
-                    "role": msg.role.value,
-                    "content": f"for reference only image_id is {msg.image_id}"
-                })
-                result_messages.append({
-                    "role": msg.role.value,
-                    "content": "",
-                    "images": [image]
-                })
+            elif msg.content_type == MessageType.IMAGE:
+                if  model.vision:
+                    # Remove the "data:image/jpeg;base64," prefix if present
+                    image = msg.content[msg.content.index(',') +1 :]
+                    result_messages.append({
+                        "role": msg.role.value,
+                        "content": f"for reference only image_id is {msg.image_id}"
+                    })
+                    result_messages.append({
+                        "role": msg.role.value,
+                        "content": "",
+                        "images": [image]
+                    })
+                else:
+                    result_messages.append({
+                        "role": msg.role.value,
+                        "content": f"some image provided, for reference only image_id is {msg.image_id}"
+                    })
 
-            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling:
                 result_messages.append({
                     "role": MessageRole.ASSISTANT.value,
                     "content": "",
@@ -321,7 +338,7 @@ class OllamaConverter(RequestDataConverter):
                     }
                 })
 
-            elif msg.content_type == MessageType.TOOL_RESULT and model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_RESULT and model.tool_calling:
                 result_messages.append({
                     "role": MessageRole.TOOL.value,
                     "content": msg.content,
@@ -398,7 +415,7 @@ class OllamaConverter(RequestDataConverter):
             "stream": True
         }
 
-        if model.tool_calling_supported:
+        if model.tool_calling:
             tools = self.get_tools()
             request_data["tools"] = tools
 
@@ -423,7 +440,7 @@ class AnthropicConverter(RequestDataConverter):
                     "role": msg.role.value,
                     "content": msg.content
                 })
-            elif msg.content_type == MessageType.IMAGE and model.image_input_supported:
+            elif msg.content_type == MessageType.IMAGE and model.vision:
                 # Remove the "data:image/jpeg;base64," prefix if present
                 image = msg.content[msg.content.index(',') +1 :]
                 result_messages.append({
@@ -443,7 +460,7 @@ class AnthropicConverter(RequestDataConverter):
                         }
                     ]
                 })
-            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_USE and model.tool_calling:
                 result_messages.append({
                     "role": MessageRole.ASSISTANT.value,
                     "content": [
@@ -455,7 +472,7 @@ class AnthropicConverter(RequestDataConverter):
                         }
                     ]
                 })
-            elif msg.content_type == MessageType.TOOL_RESULT and model.tool_calling_supported:
+            elif msg.content_type == MessageType.TOOL_RESULT and model.tool_calling:
                 result_messages.append({
                     "role": MessageRole.USER.value,
                     "content": [
@@ -549,11 +566,11 @@ class AnthropicConverter(RequestDataConverter):
             "stream": True,
         }
 
-        if model.tool_calling_supported:
+        if model.tool_calling:
             tools = self.get_tools()
             request_data["tools"] = tools
 
-        if conversation.config.thinking and model.thinking_supported:
+        if conversation.config.thinking and model.thinking:
             request_data['thinking'] = {'type': 'enabled', 'budget_tokens': max_tokens - 500}
 
         return request_data
