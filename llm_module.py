@@ -7,11 +7,11 @@ from typing import Any
 from io import BytesIO
 import json
 import os
-import uuid
 
 from telebot.types import Message
 from openai import RateLimitError
 from pydub import AudioSegment
+import telegramify_markdown
 
 import config
 from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType, Tool, LLMModel
@@ -236,6 +236,20 @@ DEFAULT_MAX_TOKENS = 4096
 CONV_PATH = os.path.join(os.path.dirname(__file__), "conv")
 
 
+async def send_md_formated_or_plain(botnav: TeleBotNav, message: Message, text: str) -> None:
+    prettify_answers: bool = message.state_data.get('prettify_answers', True)
+
+    if not prettify_answers:
+        await botnav.bot.send_message(message.chat.id, text)
+        return
+    try:
+        md_text = telegramify_markdown.standardize(text)
+        await botnav.bot.send_message(message.chat.id, md_text, parse_mode='MarkdownV2')
+    except Exception:
+        logger.exception("Failed to send md formatted message, sending plain text")
+        await botnav.bot.send_message(message.chat.id, text)
+
+
 def get_available_models(botnav: TeleBotNav, message: Message) -> dict[str, LLMModel]:
     available_models: dict[str, LLMModel] = {}
     for name, model in AVAILABLE_LLM_MODELS.items():
@@ -414,6 +428,9 @@ class LLMRouter:
         conversation = get_or_create_conversation(botnav, message)
         conversation.clear_conversation()
 
+        if len(conversation.messages) == 0:
+            return
+
         await cls.show_chat_options(botnav, message)
 
     @classmethod
@@ -540,6 +557,14 @@ class LLMRouter:
         await cls.show_memory_list(botnav, message)
 
     @classmethod
+    async def toggle_prettyfy_answers(cls, botnav: TeleBotNav, message: Message) -> None:
+        if not message.state_data.get('prettify_answers', True):
+            message.state_data['prettify_answers'] = True
+        else:
+            message.state_data['prettify_answers'] = False
+        await cls.show_chat_options(botnav, message)
+
+    @classmethod
     async def show_help(cls, botnav: TeleBotNav, message: Message) -> None:
         await botnav.bot.send_message(
             message.chat.id,
@@ -558,10 +583,12 @@ class LLMRouter:
         model = conversation.config.model
         memory_permited = is_permitted(botnav, message, 'can_use_memory_tool')
         memory_enabled = "✅" if conversation.config.memory else "❌"
+        prettyfy_answers = "✅" if message.state_data.get('prettify_answers', True) else "❌"
 
         await botnav.print_buttons(
             message.chat.id,
             {
+                f'🎨 Prettify answers {prettyfy_answers}': cls.toggle_prettyfy_answers,
                 f'🎯 One Off {one_off_status}': cls.set_one_off,
                 f'📤 Send upon command {send_mode}': cls.switch_delayed_message_mode,
                 f'🔢 Max tokens({max_tokens})': cls.request_set_max_tokens,
@@ -666,17 +693,17 @@ class LLMRouter:
                 # Flush command
                 if reply is None:
                     for msg in message_splitter.flush():
-                        await botnav.bot.send_message(message.chat.id, msg)
+                        await send_md_formated_or_plain(botnav, message, msg)
                     continue
 
                 msg = message_splitter.add(reply)
 
                 if msg:
-                    await botnav.bot.send_message(message.chat.id, msg)
+                    await send_md_formated_or_plain(botnav, message, msg)
 
             for msg in message_splitter.flush():
                 if msg:
-                    await botnav.bot.send_message(message.chat.id, msg)
+                    await send_md_formated_or_plain(botnav, message, msg)
 
             user = botnav.get_user(message)
 

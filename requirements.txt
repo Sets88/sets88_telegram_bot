@@ -8,3 +8,4 @@ anthropic
 funcparserlib
 audioop-lts
 ollama
+telegramify_markdown==0.5.2
