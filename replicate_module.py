@@ -224,7 +224,10 @@ def get_model_params(telebot_nav: TeleBotNav, message: Message, model_name: str)
     if not is_permitted(telebot_nav, message, 'can_use_replicate_models'):
         return {}
 
-    exclude_models = get_permission(telebot_nav, message, 'exclude_replicate_models')
+    exclude_models = []
+
+    if not get_permission(telebot_nav, message, 'is_admin'):
+        exclude_models = get_permission(telebot_nav, message, 'exclude_replicate_models')
 
     if exclude_models and model_name in exclude_models:
         return {}

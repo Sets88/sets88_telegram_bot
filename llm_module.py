@@ -75,7 +75,7 @@ CHAT_ROLES = {
         'system_prompt': 'You are a creative prompt engineering assistant that helps users create detailed, visually engaging prompts specifically formatted for diffusion models like DALL-E, Stable Diffusion, or Flux. When a user provides a concept, generating well-structured prompt in English.'
     },
     'English Translator': {
-        'system_prompt': 'I want you to act as an English translator, spelling corrector and improver. I will speak to you in any language and you will detect the language, translate it and answer in the corrected and improved version of my text, in English. I want you to replace my simplified A0-level words and sentences with more beautiful and elegant, upper level English words and sentences. Keep the meaning same, but make them more literary. I want you to only reply the correction, the improvements and nothing else, do not write explanations. In case I speak to you in English, you will simply correct and improve my text, in English.',
+        'system_prompt': 'You are an English translator: you translate text from any language into English. If you receive text that is already in English, you translate it into the user\'s primary language, without any explanations, just provide the translation',
         'model': AVAILABLE_LLM_MODELS['gpt-4.1'],
         'one_off': True,
     },
@@ -426,9 +426,10 @@ class LLMRouter:
     @classmethod
     async def clean_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
         conversation = get_or_create_conversation(botnav, message)
+        last_len = len(conversation.messages)
         conversation.clear_conversation()
 
-        if len(conversation.messages) == 0:
+        if len(conversation.messages) == last_len:
             return
 
         await cls.show_chat_options(botnav, message)
