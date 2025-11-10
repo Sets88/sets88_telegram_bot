@@ -12,6 +12,7 @@ from telebot.types import Message
 from openai import RateLimitError
 from pydub import AudioSegment
 import telegramify_markdown
+from telebot.asyncio_helper import ApiTelegramException
 
 import config
 from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType, Tool, LLMModel
@@ -69,7 +70,7 @@ CHAT_ROLES = {
         'system_prompt': "You are a member of Jehovah's Witnesses and you do not have any doubts about the existence of God. You are willing to say anything to prove it.",
     },
     'Linguist': {
-        'system_prompt': "You are a helpful lingual assitant.",
+        'system_prompt': "You are a linguistics expert. When you receive a text in any language, you strive to enhance it, making it sound more natural to native speakers. You correct grammatical errors, elevate the text to a more literary style, replace simple words with more sophisticated synonyms, and improve sentence structure while preserving the original meaning. You respond only with the revised text, without explanations or comments.",
     },
     'Diffusion prompt': {
         'system_prompt': 'You are a creative prompt engineering assistant that helps users create detailed, visually engaging prompts specifically formatted for diffusion models like DALL-E, Stable Diffusion, or Flux. When a user provides a concept, generating well-structured prompt in English.'
@@ -586,24 +587,29 @@ class LLMRouter:
         memory_enabled = "✅" if conversation.config.memory else "❌"
         prettyfy_answers = "✅" if message.state_data.get('prettify_answers', True) else "❌"
 
-        await botnav.print_buttons(
-            message.chat.id,
-            {
-                f'🎨 Prettify answers {prettyfy_answers}': cls.toggle_prettyfy_answers,
-                f'🎯 One Off {one_off_status}': cls.set_one_off,
-                f'📤 Send upon command {send_mode}': cls.switch_delayed_message_mode,
-                f'🔢 Max tokens({max_tokens})': cls.request_set_max_tokens,
-                '🏁 Set system prompt': cls.request_set_system_prompt,
-                f'🧹 Clean conversation({conversation_length})': cls.clean_conversation,
-                f'🤖 Model({model.name})': cls.show_models_list,
-                f'👥 Role({role})': cls.show_roles_list,
-                f'💾 Memory {memory_enabled}': cls.show_memory_list if memory_permited else None,
-                '❓ Help': cls.show_help,
-            },
-            row_width=1,
-            message_to_rewrite=message if message.from_user.is_bot else None,
-            text='Options:'
-        )
+        try:
+            await botnav.print_buttons(
+                message.chat.id,
+                {
+                    f'🎨 Prettify answers {prettyfy_answers}': cls.toggle_prettyfy_answers,
+                    f'🎯 One Off {one_off_status}': cls.set_one_off,
+                    f'📤 Send upon command {send_mode}': cls.switch_delayed_message_mode,
+                    f'🔢 Max tokens({max_tokens})': cls.request_set_max_tokens,
+                    '🏁 Set system prompt': cls.request_set_system_prompt,
+                    f'🧹 Clean conversation({conversation_length})': cls.clean_conversation,
+                    f'🤖 Model({model.name})': cls.show_models_list,
+                    f'👥 Role({role})': cls.show_roles_list,
+                    f'💾 Memory {memory_enabled}': cls.show_memory_list if memory_permited else None,
+                    '❓ Help': cls.show_help,
+                },
+                row_width=1,
+                message_to_rewrite=message if message.from_user.is_bot else None,
+                text='Options:'
+            )
+        except ApiTelegramException as exc:
+            if 'Bad Request: message is not modified' in exc.description:
+                return
+            raise exc
 
     @classmethod
     async def chat_message_handler(cls, botnav: TeleBotNav, message: Message):
