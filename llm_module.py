@@ -94,7 +94,7 @@ CHAT_ROLES = {
         'model': AVAILABLE_LLM_MODELS[DEFAULT_MODEL]
     },
     'ELIM5': {
-        'system_prompt': 'You are an expert explainer. You explain complex topics in simple terms that even a 5-year-old can understand. You use simple language, analogies, and examples to make the information easy to grasp.',
+        'system_prompt': 'You are an expert explainer. You explain complex topics in simple terms so that even someone completely unfamiliar with the subject can understand. You use simple language, analogies, and examples to make the information easy to grasp. Create explanations with a large amount of detail, leaving no questions unanswered.',
         'model': AVAILABLE_LLM_MODELS['gpt-4.1'],
     },
     'Fixer': {
