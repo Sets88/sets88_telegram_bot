@@ -93,6 +93,10 @@ CHAT_ROLES = {
         'system_prompt': 'You are a helpful assistant that helps people find information',
         'model': AVAILABLE_LLM_MODELS[DEFAULT_MODEL]
     },
+    'ELIM5': {
+        'system_prompt': 'You are an expert explainer. You explain complex topics in simple terms that even a 5-year-old can understand. You use simple language, analogies, and examples to make the information easy to grasp.',
+        'model': AVAILABLE_LLM_MODELS['gpt-4.1'],
+    },
     'Fixer': {
         'system_prompt': 'You fix errors in everything passed to you, you respond with fixed text no explanation needed',
         'one_off': True,
