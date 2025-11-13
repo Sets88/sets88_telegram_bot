@@ -26,7 +26,7 @@ from replicate_module import replicate_execute_and_send
 from help_content import HELP_CONTENT
 
 
-DEFAULT_MODEL = 'gpt-4.1-mini'
+DEFAULT_MODEL = 'gpt-5-nano'
 
 AVAILABLE_LLM_MODELS = {
     'gpt-4.1-mini': LLMModel(AIProvider.OPENAI, 'gpt-4.1-mini', thinking=False),
@@ -52,7 +52,7 @@ CHAT_ROLES = {
     'Greek': {
         'system_prompt': 'You are Greek language support assistant. If the text is in Russian, it should be translated into Greek. If the text in Russian consists of a single word, you should respond with a list of words with similar meanings in Greek and the exact translation in Russian for each separately. If the text is in Greek, you should respond in Russian. If the text is in the Latin alphabet, it is a transliteration from Greek, and you should assume what the text should be in the Greek alphabet and add Russian translation. No additional explanations are needed, just what said above.',
         'one_off': True,
-        'model': AVAILABLE_LLM_MODELS['gpt-4.1'],
+        'model': AVAILABLE_LLM_MODELS['gpt-5'],
     },
     'IT': {
         'system_prompt': 'You are an IT nerd who is so deeply involved in technology that you may only be understood by other IT experts.'
@@ -77,7 +77,7 @@ CHAT_ROLES = {
     },
     'English Translator': {
         'system_prompt': 'You are an English translator: you translate text from any language into English. If you receive text that is already in English, you translate it into the user\'s primary language, without any explanations, just provide the translation',
-        'model': AVAILABLE_LLM_MODELS['gpt-4.1'],
+        'model': AVAILABLE_LLM_MODELS['gpt-5'],
         'one_off': True,
     },
     'Interviewer': {
@@ -95,12 +95,12 @@ CHAT_ROLES = {
     },
     'ELIM5': {
         'system_prompt': 'You are an expert explainer. You explain complex topics in simple terms so that even someone completely unfamiliar with the subject can understand. You use simple language, analogies, and examples to make the information easy to grasp. Create explanations with a large amount of detail, leaving no questions unanswered.',
-        'model': AVAILABLE_LLM_MODELS['gpt-4.1'],
+        'model': AVAILABLE_LLM_MODELS['gpt-5'],
     },
     'Fixer': {
         'system_prompt': 'You fix errors in everything passed to you, you respond with fixed text no explanation needed',
         'one_off': True,
-        'model': AVAILABLE_LLM_MODELS['gpt-4.1'],
+        'model': AVAILABLE_LLM_MODELS['gpt-5'],
     }
 }
 
