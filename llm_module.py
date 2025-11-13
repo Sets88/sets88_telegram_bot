@@ -104,6 +104,19 @@ CHAT_ROLES = {
     }
 }
 
+SPEECH_MODELS = [
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "fable",
+    "nova",
+    "onyx",
+    "sage",
+    "shimmer"
+]
+
 
 conversations: dict[int, ConversationManager] = {}
 
@@ -241,8 +254,23 @@ DEFAULT_MAX_TOKENS = 4096
 CONV_PATH = os.path.join(os.path.dirname(__file__), "conv")
 
 
+async def openai_send_speech(botnav: TeleBotNav, message: Message, text: str, speech_model: str) -> None:
+    audio_file = await botnav.await_coro_sending_action(
+        message.chat.id,
+        SpeechHelper.tts_generate_audio(text, speech_model),
+        'record_voice'
+    )
+
+    await botnav.bot.send_voice(message.chat.id, audio_file)
+
+
 async def send_md_formated_or_plain(botnav: TeleBotNav, message: Message, text: str) -> None:
     prettify_answers: bool = message.state_data.get('prettify_answers', True)
+    speech_model: str = message.state_data.get('speech_model', 'Off')
+
+    if speech_model != 'Off':
+        await openai_send_speech(botnav, message, text, speech_model)
+        return
 
     if not prettify_answers:
         await botnav.bot.send_message(message.chat.id, text)
@@ -333,7 +361,7 @@ def encode_jpg_image(image: bytes):
     return "data:image/jpeg;base64," + base64.b64encode(image).decode('utf-8')
  
 
-class WhisperHelper:
+class SpeechHelper:
     @classmethod
     def get_mp3_from_ogg(cls, file_content: bytes) -> BytesIO:
         file = BytesIO(file_content)
@@ -351,10 +379,32 @@ class WhisperHelper:
 
         file_info = await botnav.bot.get_file(message.voice.file_id)
         file_content = await botnav.bot.download_file(file_info.file_path)
-        file = await asyncio.to_thread(cls.get_mp3_from_ogg, file_content)
-        file.name = 'voice.mp3'
+        if file_info.file_path.endswith('.ogg') or file_info.file_path.endswith('.oga'):
+            file = await asyncio.to_thread(cls.get_mp3_from_ogg, file_content)
+            file.name = 'voice.mp3'
+        elif file_info.file_path.endswith('.mp3'):
+            file = BytesIO(file_content)
+            file.name = 'voice.mp3'
+        else:
+            import pdb; pdb.set_trace()
+            raise ValueError("Unsupported audio format")
+
         text = await openai_instance.whisper_transcribe(file)
         return text
+
+    @classmethod
+    async def tts_generate_audio(cls, text: str, voice: str) -> BytesIO:
+        response = await openai_instance.client.audio.speech.create(
+            model='gpt-4o-mini-tts',
+            input=text,
+            voice=voice,
+            response_format='mp3'
+        )
+
+        audio_file = BytesIO(response.read())
+        audio_file.name = 'speech.mp3'
+        audio_file.seek(0)
+        return audio_file
 
 
 class LLMRouter:
@@ -571,6 +621,34 @@ class LLMRouter:
         await cls.show_chat_options(botnav, message)
 
     @classmethod
+    async def show_speech_models_list(cls, botnav: TeleBotNav, message: Message) -> None:
+        buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]] = {
+            f"{name}": functools.partial(
+                cls.switch_speech_model,
+                name
+            ) for name in SPEECH_MODELS
+        }
+
+        buttons['Off'] = functools.partial(
+            cls.switch_speech_model,
+            'Off'
+        )
+        buttons['⬅️ Back'] = cls.show_chat_options
+
+        await botnav.print_buttons(
+            message.chat.id,
+            buttons,
+            message_to_rewrite=message,
+            text='Available speech models:',
+            row_width=2,
+        )
+
+    @classmethod
+    async def switch_speech_model(cls, model_name: str, botnav: TeleBotNav, message: Message) -> None:
+        message.state_data['speech_model'] = model_name
+        await cls.show_chat_options(botnav, message)
+
+    @classmethod
     async def show_help(cls, botnav: TeleBotNav, message: Message) -> None:
         await botnav.bot.send_message(
             message.chat.id,
@@ -590,6 +668,7 @@ class LLMRouter:
         memory_permited = is_permitted(botnav, message, 'can_use_memory_tool')
         memory_enabled = "✅" if conversation.config.memory else "❌"
         prettyfy_answers = "✅" if message.state_data.get('prettify_answers', True) else "❌"
+        speech_model = message.state_data.get('speech_model', 'Off')
 
         try:
             await botnav.print_buttons(
@@ -604,6 +683,7 @@ class LLMRouter:
                     f'🤖 Model({model.name})': cls.show_models_list,
                     f'👥 Role({role})': cls.show_roles_list,
                     f'💾 Memory {memory_enabled}': cls.show_memory_list if memory_permited else None,
+                    f'🗣️ Speech Model({speech_model})': cls.show_speech_models_list,
                     '❓ Help': cls.show_help,
                 },
                 row_width=1,
@@ -626,7 +706,7 @@ class LLMRouter:
         if message.content_type == 'voice':
             result = await botnav.await_coro_sending_action(
                 message.chat.id,
-                WhisperHelper.extract_text_from_voice(botnav, message),
+                SpeechHelper.extract_text_from_voice(botnav, message),
                 'typing'
             )
 
