@@ -33,7 +33,7 @@ AVAILABLE_LLM_MODELS = {
     'o4-mini': LLMModel(AIProvider.OPENAI, 'o4-mini'),
     'gpt-4.1': LLMModel(AIProvider.OPENAI, 'gpt-4.1', thinking=False),
     'gpt-5-nano': LLMModel(AIProvider.OPENAI, 'gpt-5-nano'),
-    'gpt-5': LLMModel(AIProvider.OPENAI, 'gpt-5'),
+    'gpt-5.1': LLMModel(AIProvider.OPENAI, 'gpt-5.1'),
     'o3': LLMModel(AIProvider.OPENAI, 'o3'),
     'claude-haiku-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-haiku-4-5'),
     'claude-sonnet-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-sonnet-4-5'),
@@ -52,7 +52,7 @@ CHAT_ROLES = {
     'Greek': {
         'system_prompt': 'You are Greek language support assistant. If the text is in Russian, it should be translated into Greek. If the text in Russian consists of a single word, you should respond with a list of words with similar meanings in Greek and the exact translation in Russian for each separately. If the text is in Greek, you should respond in Russian. If the text is in the Latin alphabet, it is a transliteration from Greek, and you should assume what the text should be in the Greek alphabet and add Russian translation. No additional explanations are needed, just what said above.',
         'one_off': True,
-        'model': AVAILABLE_LLM_MODELS['gpt-5'],
+        'model': AVAILABLE_LLM_MODELS['gpt-5.1'],
     },
     'IT': {
         'system_prompt': 'You are an IT nerd who is so deeply involved in technology that you may only be understood by other IT experts.'
@@ -77,7 +77,7 @@ CHAT_ROLES = {
     },
     'English Translator': {
         'system_prompt': 'You are an English translator: you translate text from any language into English. If you receive text that is already in English, you translate it into the user\'s primary language, without any explanations, just provide the translation',
-        'model': AVAILABLE_LLM_MODELS['gpt-5'],
+        'model': AVAILABLE_LLM_MODELS['gpt-5.1'],
         'one_off': True,
     },
     'Interviewer': {
@@ -91,16 +91,17 @@ CHAT_ROLES = {
     },
     'Assistant': {
         'system_prompt': 'You are a helpful assistant that helps people find information',
-        'model': AVAILABLE_LLM_MODELS[DEFAULT_MODEL]
+        'model': AVAILABLE_LLM_MODELS[DEFAULT_MODEL],
+        'one_off': False
     },
     'ELIM5': {
         'system_prompt': 'You are an expert explainer. You explain complex topics in simple terms so that even someone completely unfamiliar with the subject can understand. You use simple language, analogies, and examples to make the information easy to grasp. Create explanations with a large amount of detail, leaving no questions unanswered.',
-        'model': AVAILABLE_LLM_MODELS['gpt-5'],
+        'model': AVAILABLE_LLM_MODELS['gpt-5.1'],
     },
     'Fixer': {
         'system_prompt': 'You fix errors in everything passed to you, you respond with fixed text no explanation needed',
         'one_off': True,
-        'model': AVAILABLE_LLM_MODELS['gpt-5'],
+        'model': AVAILABLE_LLM_MODELS['gpt-5.1'],
     }
 }
 
@@ -155,7 +156,14 @@ async def image_generation_tool(
             input_data['image_input'].append(BytesIO(img_data))
 
     try:
-        await replicate_execute_and_send(botnav, message, model, input_data)
+        result = await replicate_execute_and_send(botnav, message, model, input_data)
+
+        if result:
+            image_id = conversation.cache_data(result.read())
+            conversation.add_message(
+                MessageRole.ASSISTANT,
+                content=f'I uploaded image with reference image_id is {image_id}'
+            )
         return 'true'
     except Exception as exc:
         await botnav.bot.send_message(message.chat.id, "Image generation failed, try again later")
@@ -386,7 +394,6 @@ class SpeechHelper:
             file = BytesIO(file_content)
             file.name = 'voice.mp3'
         else:
-            import pdb; pdb.set_trace()
             raise ValueError("Unsupported audio format")
 
         text = await openai_instance.whisper_transcribe(file)
@@ -412,6 +419,12 @@ class LLMRouter:
     async def reset_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
         user_id = botnav.get_user(message).id
         conversations[user_id] = get_new_conversation_manager(botnav, message)
+
+        if message.state_data:
+            message.state_data.pop('delayed_message', None)
+            message.state_data.pop('prettify_answers', None)
+            message.state_data.pop('speech_model', None)
+
         await botnav.bot.send_message(message.chat.id, "Conversation was reset")
 
     ## Options handlers

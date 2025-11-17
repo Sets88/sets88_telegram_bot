@@ -244,7 +244,7 @@ def replicate_execute(replicate_id: str, input_data: dict):
     return output
 
 
-async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model_name: str, input_data: dict[str, Any]):
+async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model_name: str, input_data: dict[str, Any]) -> Any:
     replicate_model = get_model_params(botnav, message, model_name)
 
     if not replicate_model:
@@ -257,25 +257,35 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
     )
 
     if isinstance(result, list) and replicate_model['output_type'] == 'video':
+        result_videos = []
         for video in result:
             await botnav.await_coro_sending_action(
                 message.chat.id,
                 botnav.bot.send_video(message.chat.id, video),
                 'upload_video'
             )
+            result_videos.append(video)
+        return result_videos
+
     elif isinstance(result, list) and replicate_model['output_type'] == 'photo':
+        result_photos = []
         for photo in result:
             await botnav.await_coro_sending_action(
                 message.chat.id,
                 botnav.bot.send_photo(message.chat.id, photo),
                 'upload_photo'
             )
+            result_photos.append(photo)
+        return result_photos
+
     elif isinstance(result, str) and replicate_model['output_type'] == 'photo':
         await botnav.await_coro_sending_action(
             message.chat.id,
             botnav.bot.send_photo(message.chat.id, result),
             'upload_photo'
         )
+        return result
+
     elif isinstance(result, str) and replicate_model['output_type'] == 'video':
         await botnav.await_coro_sending_action(
             message.chat.id,
@@ -290,12 +300,15 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                 botnav.bot.send_video(message.chat.id, result.url),
                 'upload_video'
             )
+            return result
+
         elif mime_type and mime_type.startswith('image'):
             await botnav.await_coro_sending_action(
                 message.chat.id,
                 botnav.bot.send_photo(message.chat.id, result.url),
                 'upload_photo'
             )
+            return result
         else:
             document = await botnav.await_coro_sending_action(
                 message.chat.id,
@@ -308,6 +321,7 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                 botnav.bot.send_document(message.chat.id, document, timeout=120),
                 'upload_document'
             )
+            return document
 
     if replicate_model['output_type'] == 'text':
         parts = []
@@ -319,6 +333,7 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                 await botnav.bot.send_message(message.chat.id, "".join(parts))
                 parts = []
         await botnav.bot.send_message(message.chat.id, "".join(parts))
+        return "".join(parts)
 
     if replicate_model['output_type'] == 'file':
         if isinstance(result, FileOutput):
@@ -333,7 +348,11 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                 botnav.bot.send_document(message.chat.id, document, timeout=120),
                 'upload_document'
             )
+
+            return document
+
         elif isinstance(result, list):
+            document_list = []
             for document_url in result:
                 document = botnav.await_coro_sending_action(
                     message.chat.id,
@@ -346,6 +365,9 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                     botnav.bot.send_document(message.chat.id, document, timeout=120),
                     'upload_document'
                 )
+                document_list.append(document)
+            return document_list
+
         elif isinstance(result, str):
                 document = await botnav.await_coro_sending_action(
                     message.chat.id,
@@ -358,6 +380,7 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                     botnav.bot.send_document(message.chat.id, document, timeout=120),
                     'upload_document'
                 )
+                return document
 
 
 async def replicate_set_select_param(param_name: str, value: str, botnav: TeleBotNav, message: Message):

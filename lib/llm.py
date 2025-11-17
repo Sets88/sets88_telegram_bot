@@ -602,7 +602,7 @@ class ConversationManager:
 
         return data_id
 
-    @functools.lru_cache(maxsize=3)
+    @functools.lru_cache(maxsize=5)
     def get_cached_data(self, data_id: str) -> str | bytes | None:
         return self.data_cache.pop(data_id, None)
 
