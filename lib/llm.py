@@ -412,7 +412,8 @@ class OllamaConverter(RequestDataConverter):
         request_data: dict[str, Any] = {
             "messages": provider_messages,
             "model": model.name,
-            "stream": True
+            "stream": True,
+            "options": {"num_ctx": conversation.config.max_tokens}
         }
 
         if model.tool_calling:
@@ -914,6 +915,10 @@ class ClaudeInstance:
             executed: list[tuple[anthropic.types.ToolUseBlock, Any]] = []
 
             async for event in stream:
+                if event.type == 'message_delta' and event.delta.stop_reason:
+                    yield f'\nI am not able to complete your request at the moment due to {event.delta.stop_reason}'
+                    return
+
                 if event.type == 'content_block_stop':
                     if function_calls:
                         if full_response:
