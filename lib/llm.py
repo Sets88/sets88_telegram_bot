@@ -915,17 +915,21 @@ class ClaudeInstance:
 
             async for event in stream:
                 if event.type == 'content_block_stop':
-                    if full_response:
-                        conversation.add_message(
-                            role=MessageRole.ASSISTANT,
-                            content=full_response
-                        )
-                        full_response = ''
-                        # Flush command
-                        yield None
-
                     if function_calls:
-                        function_calls[-1].input = json.loads(tool_params_json)
+                        if full_response:
+                            conversation.add_message(
+                                role=MessageRole.ASSISTANT,
+                                content=full_response
+                            )
+                            full_response = ''
+                            # Flush command
+                            yield None
+
+                        if tool_params_json:
+                            function_calls[-1].input = json.loads(tool_params_json)
+                        else:
+                            function_calls[-1].input = {}
+
                         tool_params_json = ''
 
                         executed = await self.execute_tools(conversation, function_calls, extra_params)
@@ -960,6 +964,16 @@ class ClaudeInstance:
                     if content:
                         full_response += content
                         yield content
+
+            if full_response:
+                conversation.add_message(
+                    role=MessageRole.ASSISTANT,
+                    content=full_response
+                )
+                full_response = ''
+                # Flush command
+                yield None
+
             if not executed:
                 break
 
