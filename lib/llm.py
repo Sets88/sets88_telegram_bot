@@ -811,6 +811,10 @@ class OpenAIInstance:
             function_calls: dict[ResponseFunctionToolCall] = {}
 
             async for event in stream:
+                if event.type == 'response.incomplete':
+                    yield f'I am not able to complete your request at the moment due to {event.response.incomplete_details.reason}'
+                    return
+
                 if isinstance(event, ResponseOutputItemAddedEvent) and isinstance(event.item, ResponseFunctionToolCall):
                     function_calls[event.item.id] = event.item
 
