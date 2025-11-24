@@ -2,6 +2,8 @@ touch log.txt
 docker stop mcp_fetch_node
 docker stop gptchat_bot
 
+docker rm gptchat_bot
+
 docker build -t gptchat_bot .
 docker network create tgbot
 
