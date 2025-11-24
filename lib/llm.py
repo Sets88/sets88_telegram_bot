@@ -817,7 +817,6 @@ class OpenAIInstance:
             function_calls: dict[ResponseFunctionToolCall] = {}
 
             async for event in stream:
-                import pdb; pdb.set_trace()
                 if event.type == 'response.incomplete':
                     yield f'I am not able to complete your request at the moment due to {event.response.incomplete_details.reason}'
                     return
