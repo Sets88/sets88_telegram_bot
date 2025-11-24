@@ -7,6 +7,7 @@
     "REPLICATE_API_KEY": "",
     "YT_DL_DIR": "/var/data/uploads",
     "YT_DL_URL": "https://somehost.com/uploads",
+    "MCP_FETCH_URL": "http://mcp_fetch_node:8080",
     "SCHEDULES": 1,
     "USER_PERMISSIONS": {
         "default": {

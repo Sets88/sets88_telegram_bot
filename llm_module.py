@@ -13,6 +13,8 @@ from openai import RateLimitError
 from pydub import AudioSegment
 import telegramify_markdown
 from telebot.asyncio_helper import ApiTelegramException
+from mcp import ClientSession
+from mcp.client.sse import sse_client
 
 import config
 from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType, Tool, LLMModel
@@ -44,6 +46,7 @@ AVAILABLE_LLM_MODELS = {
     'qwen3:32b': LLMModel(AIProvider.OLLAMA, 'qwen3:32b', vision=False),
     'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', thinking=False, vision=False),
     'mistral-small3.2': LLMModel(AIProvider.OLLAMA, 'mistral-small3.2', thinking=False),
+    'qwen3:4b-instruct': LLMModel(AIProvider.OLLAMA, 'qwen3:4b-instruct', vision=False, thinking=True)
 }
 
 CHAT_ROLES = get_chat_roles(AVAILABLE_LLM_MODELS, DEFAULT_MODEL)
@@ -132,6 +135,25 @@ async def add_to_user_memory_tool(
     return 'true'
 
 
+async def fetch_http_content(
+    conversation: ConversationManager,
+    botnav: TeleBotNav,
+    message: Message,
+    url: str
+) -> str:
+    try:
+        async with sse_client(config.MCP_FETCH_URL) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                result = await session.call_tool('fetch', arguments={'url': url, 'max_length': 100000})
+                return result.content[0].text
+    except Exception as exc:
+        logger.exception(exc)
+        return 'ERROR'
+    return 'ERROR'
+
+
 async def get_current_time(
     conversation: ConversationManager,
     botnav: TeleBotNav,
@@ -193,6 +215,20 @@ DEFAULT_TOOLS = [
             'value': ToolParameter(
                 name='value', description='The value is the actual information to remember'
                     'with short description within 1000 characters max',
+                ptype=str, required=True
+            )
+        }
+    ),
+    Tool(
+        type='function',
+        providers=[AIProvider.ANTHROPIC, AIProvider.OLLAMA],
+        name='fetch_http_content',
+        description='Fetches and returns the textual content of the specified HTTP or HTTPS URL, or ERROR if fetching fails',
+        function=fetch_http_content,
+        is_enabled_fn=lambda conversation: config.MCP_FETCH_URL is not None,
+        schema={
+            'url': ToolParameter(
+                name='url', description='The URL of the webpage to fetch',
                 ptype=str, required=True
             )
         }

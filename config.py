@@ -27,3 +27,5 @@ YT_DL_URL = configdata.get('YT_DL_URL', None)
 SCHEDULES = configdata.get('SCHEDULES', None)
 
 USER_PERMISSIONS = configdata.get('USER_PERMISSIONS', {})
+
+MCP_FETCH_URL = configdata.get('MCP_FETCH_URL', None)

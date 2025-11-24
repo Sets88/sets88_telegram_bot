@@ -21,6 +21,9 @@ import config
 from logger import logger
 
 
+LLM_RESPONSE_TIMEOUT = 120
+
+
 class AIProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
@@ -730,6 +733,8 @@ class ConversationManager:
             if tool.type == 'function' and tool.name == tool_name:
                 if not tool.function:
                     raise ValueError(f"Tool {tool_name} has no associated function.")
+
+                logger.info(f"Executing tool {tool_name} with arguments {arguments}")
                 return await tool.function(**arguments)
 
         raise ValueError(f"Tool {tool_name} not found in conversation configuration.")
@@ -760,7 +765,7 @@ class ConversationManager:
 
 class OpenAIInstance:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        self.client = AsyncOpenAI(api_key=config.OPENAI_API_KEY, timeout=LLM_RESPONSE_TIMEOUT)
 
     async def execute_tools(
         self,
@@ -812,6 +817,7 @@ class OpenAIInstance:
             function_calls: dict[ResponseFunctionToolCall] = {}
 
             async for event in stream:
+                import pdb; pdb.set_trace()
                 if event.type == 'response.incomplete':
                     yield f'I am not able to complete your request at the moment due to {event.response.incomplete_details.reason}'
                     return
@@ -870,7 +876,7 @@ class OpenAIInstance:
 
 class ClaudeInstance:
     def __init__(self):
-        self.client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+        self.client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY, timeout=LLM_RESPONSE_TIMEOUT)
 
     async def execute_tools(
         self,
@@ -915,7 +921,7 @@ class ClaudeInstance:
             executed: list[tuple[anthropic.types.ToolUseBlock, Any]] = []
 
             async for event in stream:
-                if event.type == 'message_delta' and event.delta.stop_reason:
+                if event.type == 'message_delta' and event.delta.stop_reason != 'tool_use':
                     yield f'\nI am not able to complete your request at the moment due to {event.delta.stop_reason}'
                     return
 
@@ -985,7 +991,7 @@ class ClaudeInstance:
 
 class OllamaInstance:
     def __init__(self):
-        self.client = ollama.AsyncClient(host=config.OLLAMA_HOST)
+        self.client = ollama.AsyncClient(host=config.OLLAMA_HOST, timeout=LLM_RESPONSE_TIMEOUT)
 
     async def execute_tools(
         self,
