@@ -9,3 +9,4 @@ funcparserlib
 audioop-lts
 ollama
 telegramify_markdown==0.5.2
+mcp==1.21.2

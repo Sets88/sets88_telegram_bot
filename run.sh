@@ -12,7 +12,6 @@ docker run -d \
     tgambet/mcp-fetch-node
 
 docker run -d \
-    --rm \
     --net tgbot \
     --userns=host \
     --name gptchat_bot \
