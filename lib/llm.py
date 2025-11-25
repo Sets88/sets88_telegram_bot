@@ -301,7 +301,8 @@ class OllamaConverter(RequestDataConverter):
         model = self.conversation_manager.config.model
 
         result_messages.append({
-            "role": MessageRole.SYSTEM.value,
+            # ASSISTANT role because Qwen models skip SYSTEM messages on the first round for some reason
+            "role": MessageRole.ASSISTANT.value,
             "content": system_prompt or "You are a helpful assistant"
         })
 
@@ -920,7 +921,11 @@ class ClaudeInstance:
             executed: list[tuple[anthropic.types.ToolUseBlock, Any]] = []
 
             async for event in stream:
-                if event.type == 'message_delta' and event.delta.stop_reason != 'tool_use':
+                if (
+                    event.type == 'message_delta' and
+                    event.delta.stop_reason != 'tool_use' and
+                    event.delta.stop_reason != 'end_turn'
+                ):
                     yield f'\nI am not able to complete your request at the moment due to {event.delta.stop_reason}'
                     return
 

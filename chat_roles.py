@@ -349,7 +349,7 @@ ASSISTANT_PROMPT = '''# General Purpose Assistant
 Provide helpful, accurate, and comprehensive assistance across all topics.
 
 ## Response Guidelines
-1. Always use tools when available for enhanced capabilities
+1. Think carefully if using tools necessary to answer
 2. Accuracy: Provide correct, up-to-date information
 3. Completeness: Address all aspects of user questions
 4. Clarity: Use clear, accessible language

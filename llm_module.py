@@ -46,7 +46,7 @@ AVAILABLE_LLM_MODELS = {
     'qwen3:32b': LLMModel(AIProvider.OLLAMA, 'qwen3:32b', vision=False),
     'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', thinking=False, vision=False),
     'mistral-small3.2': LLMModel(AIProvider.OLLAMA, 'mistral-small3.2', thinking=False),
-    'qwen3:4b-instruct': LLMModel(AIProvider.OLLAMA, 'qwen3:4b-instruct', vision=False, thinking=True)
+    'qwen3:4b-instruct': LLMModel(AIProvider.OLLAMA, 'qwen3:4b-instruct', vision=False)
 }
 
 CHAT_ROLES = get_chat_roles(AVAILABLE_LLM_MODELS, DEFAULT_MODEL)
