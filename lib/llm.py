@@ -819,7 +819,9 @@ class OpenAIInstance:
 
             async for event in stream:
                 if event.type == 'response.incomplete':
-                    yield f'I am not able to complete your request at the moment due to {event.response.incomplete_details.reason}'
+                    response = f'I am not able to complete your request at the moment due to {event.response.incomplete_details.reason}'
+                    logger.info(response)
+                    yield response
                     return
 
                 if isinstance(event, ResponseOutputItemAddedEvent) and isinstance(event.item, ResponseFunctionToolCall):
@@ -926,7 +928,9 @@ class ClaudeInstance:
                     event.delta.stop_reason != 'tool_use' and
                     event.delta.stop_reason != 'end_turn'
                 ):
-                    yield f'\nI am not able to complete your request at the moment due to {event.delta.stop_reason}'
+                    response = f'\nI am not able to complete your request at the moment due to {event.delta.stop_reason}'
+                    logger.info(response)
+                    yield response
                     return
 
                 if event.type == 'content_block_stop':

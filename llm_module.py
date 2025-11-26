@@ -406,7 +406,7 @@ class LLMRouter:
             message.state_data.pop('prettify_answers', None)
             message.state_data.pop('speech_model', None)
 
-        await botnav.bot.send_message(message.chat.id, "Conversation was reset")
+        await cls.show_chat_options(botnav, message)
 
     ## Options handlers
     @classmethod
@@ -673,16 +673,17 @@ class LLMRouter:
                     f'📤 Send upon command {send_mode}': cls.switch_delayed_message_mode,
                     f'🔢 Max tokens({max_tokens})': cls.request_set_max_tokens,
                     '🏁 Set system prompt': cls.request_set_system_prompt,
-                    f'🧹 Clean conversation({conversation_length})': cls.clean_conversation,
                     f'🤖 Model({model.name})': cls.show_models_list,
                     f'👥 Role({role})': cls.show_roles_list,
                     f'💾 Memory {memory_enabled}': cls.show_memory_list if memory_permited else None,
                     f'🗣️ Speech Model({speech_model})': cls.show_speech_models_list,
+                    '🔄 Reset conversation': cls.reset_conversation,
+                    f'🧹 Clean conversation({conversation_length})': cls.clean_conversation,
                     '❓ Help': cls.show_help,
                 },
                 row_width=1,
                 message_to_rewrite=message if message.from_user.is_bot else None,
-                text='Options:'
+                text='Send message to chat, additional options:'
             )
         except ApiTelegramException as exc:
             if 'Bad Request: message is not modified' in exc.description:
@@ -812,16 +813,6 @@ class LLMRouter:
 
     @classmethod
     async def run(cls, botnav: TeleBotNav, message: Message) -> None:
-        await botnav.print_buttons(
-            message.chat.id,
-            {
-                '🔄 Reset conversation': cls.reset_conversation,
-                '⚙️ Options': cls.show_chat_options,
-            },
-            'Welcome to LLM Chat, lets chat!\nAdditional options:',
-            row_width=1
-        )
-
         botnav.wipe_commands(message, preserve=['start', 'openai'])
         botnav.add_command(message, 'chat_gpt_reset', '🔄 Reset conversation', cls.reset_conversation)
         botnav.add_command(message, 'chat_gpt_clean', '🧹 Clean conversation', cls.clean_conversation)
@@ -830,3 +821,4 @@ class LLMRouter:
         botnav.clean_next_handler(message)
         get_or_create_conversation(botnav, message)
         await botnav.send_commands(message)
+        await cls.show_chat_options(botnav, message)
