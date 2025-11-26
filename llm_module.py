@@ -20,6 +20,7 @@ import config
 from lib.llm import AIProvider, ConversationManager, MessageRole, MessageType, Tool, LLMModel
 from lib.llm import ToolParameter
 from lib.llm import openai_instance
+from lib.llm import LLM_RESPONSE_TIMEOUT
 from lib.permissions import is_llm_model_allowed, is_permitted
 from lib.utils import MessageSplitter, ConvEncoder
 from telebot_nav import TeleBotNav
@@ -36,6 +37,7 @@ AVAILABLE_LLM_MODELS = {
     'o4-mini': LLMModel(AIProvider.OPENAI, 'o4-mini'),
     'gpt-4.1': LLMModel(AIProvider.OPENAI, 'gpt-4.1', thinking=False),
     'gpt-5-nano': LLMModel(AIProvider.OPENAI, 'gpt-5-nano'),
+    'gpt-5': LLMModel(AIProvider.OPENAI, 'gpt-5'),
     'gpt-5.1': LLMModel(AIProvider.OPENAI, 'gpt-5.1'),
     'o3': LLMModel(AIProvider.OPENAI, 'o3'),
     'claude-haiku-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-haiku-4-5'),
@@ -758,7 +760,7 @@ class LLMRouter:
                 'typing'
             )
 
-        await cls.get_reply(botnav, message),
+        await asyncio.wait_for(cls.get_reply(botnav, message), timeout=LLM_RESPONSE_TIMEOUT)
 
     @classmethod
     async def get_reply(cls, botnav: TeleBotNav, message: Message) -> None:
