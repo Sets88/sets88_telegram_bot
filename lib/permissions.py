@@ -3,8 +3,18 @@ from typing import Any
 from telebot.types import Message
 
 from telebot_nav import TeleBotNav
-from lib.llm import AIProvider, LLMModel
+from lib.structs import AIProvider, LLMModel
 import config
+
+
+def is_replicate_available(botnav: TeleBotNav, message: Message) -> bool:
+    if not config.REPLICATE_API_KEY:
+        return False
+
+    if not is_permitted(botnav, message, 'can_use_replicate_models'):
+        return False
+
+    return True
 
 
 def is_llm_model_allowed(botnav: TeleBotNav, message: Message, model: LLMModel) -> bool:

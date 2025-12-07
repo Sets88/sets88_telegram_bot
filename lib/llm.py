@@ -2,11 +2,9 @@ import json
 import os
 import functools
 from time import time
-from enum import Enum
-from typing import Any, Callable, get_args, Literal
+from typing import Any, get_args, Literal
 from typing import AsyncGenerator, BinaryIO
-from dataclasses import dataclass, field, replace
-from datetime import datetime
+from dataclasses import replace
 from abc import ABC, abstractmethod
 from hashlib import md5
 import uuid
@@ -18,83 +16,12 @@ from openai.types.responses import ResponseTextDeltaEvent, ResponseFunctionToolC
 from openai.types.responses import ResponseOutputItemAddedEvent, ResponseFunctionCallArgumentsDeltaEvent
 
 import config
+from lib.agents import AgentTool
+from lib.structs import LLMModel, AIProvider, MessageRole, MessageType, UniversalMessage, ConversationConfig
 from logger import logger
 
 
-LLM_RESPONSE_TIMEOUT = 120
-
-
-class AIProvider(Enum):
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    OLLAMA = "ollama"
-
-
-class MessageRole(Enum):
-    SYSTEM = "system"
-    USER = "user"
-    ASSISTANT = "assistant"
-    TOOL = "tool"
-
-
-class MessageType(Enum):
-    TEXT = "text"
-    IMAGE = "image"
-    TOOL_USE = "tool_use"
-    TOOL_RESULT = "tool_result"
-
-
-@dataclass
-class LLMModel:
-    provider: AIProvider
-    name: str
-    thinking: bool = True
-    tool_calling: bool = True
-    vision: bool = True
-
-
-@dataclass
-class ToolParameter:
-    name: str
-    description: str
-    ptype: type
-    required: bool
-
-
-@dataclass
-class Tool:
-    type: str
-    providers: list[AIProvider]
-    name: str | None = None
-    function: Callable | None = None,
-    description: str | None = None,
-    schema: dict[str, ToolParameter] | None = None,
-    params: dict[str, Any] | None = None
-    is_enabled_fn: Callable[['ConversationManager'], bool] | None = None
-
-
-@dataclass
-class UniversalMessage:
-    id: str
-    role: MessageRole
-    content: Any
-    content_type: MessageType = MessageType.TEXT
-    timestamp: datetime = field(default_factory=datetime.now)
-    tool_name: str | None = None
-    tool_call_id: str | None = None
-    tool_call_params: dict[str, Any] | None = None
-    image_id: str | None = None
-
-
-@dataclass
-class ConversationConfig:
-    model: LLMModel | None = None
-    max_tokens: int | None = None
-    system_prompt: str | None = None
-    one_off: bool = False
-    thinking: bool = False
-    tools: list[Tool] | None = None
-    memory: bool = False
+LLM_RESPONSE_TIMEOUT = 500
 
 
 class RequestDataConverter(ABC):
@@ -109,11 +36,11 @@ class RequestDataConverter(ABC):
         pass
 
     @abstractmethod
-    def get_tools(self) -> list[dict[str, Any]] | None:
+    def get_tools(self, extra_params: dict[str, Any]) -> list[dict[str, Any]] | None:
         pass
 
     @abstractmethod
-    def get_request_parameters(self) -> dict[str, Any]:
+    def get_request_parameters(self, extra_params: dict[str, Any]) -> dict[str, Any]:
         pass
 
 
@@ -163,7 +90,7 @@ class OpenAIConverter(RequestDataConverter):
                         "content": [
                             {
                                 "type": "input_text",
-                                "text": f"for reference only image_id is {msg.image_id}"
+                                "text": f"uploaded file with image_id: {msg.image_id} use it as reference"
                             },
                             {
                                 "type": "input_image",
@@ -177,7 +104,7 @@ class OpenAIConverter(RequestDataConverter):
                         "content": [
                             {
                                 "type": "input_text",
-                                "text": f"some image provided, for reference only image_id is {msg.image_id}"
+                                "text": f"image been provided, image_id: {msg.image_id} use it as reference"
                             },
                         ]
                     }
@@ -202,7 +129,7 @@ class OpenAIConverter(RequestDataConverter):
 
         return result_message
 
-    def get_parameters(self, tool: Tool) -> dict[str, Any]:
+    def get_parameters(self, tool: AgentTool) -> dict[str, Any]:
         params: dict[str, Any] = {}
 
         if not tool.schema:
@@ -229,7 +156,7 @@ class OpenAIConverter(RequestDataConverter):
 
         return params
 
-    def get_tools(self) -> list[dict[str, Any]] | None:
+    def get_tools(self, extra_params: dict[str, Any]) -> list[dict[str, Any]] | None:
         llm_config = self.conversation_manager.config
 
         if not llm_config.model or not llm_config.model.tool_calling:
@@ -241,7 +168,7 @@ class OpenAIConverter(RequestDataConverter):
             if AIProvider.OPENAI not in tool.providers:
                 continue
 
-            if tool.is_enabled_fn and not tool.is_enabled_fn(self.conversation_manager):
+            if not tool.is_enabled(self.conversation_manager, extra_params):
                 continue
 
             tool_data: dict[str, Any] = {}
@@ -261,7 +188,7 @@ class OpenAIConverter(RequestDataConverter):
             tools.append(tool_data)
         return tools
 
-    def get_request_parameters(self) -> dict[str, Any]:
+    def get_request_parameters(self, extra_params: dict[str, Any]) -> dict[str, Any]:
         conversation = self.conversation_manager
         model = conversation.config.model
 
@@ -277,7 +204,7 @@ class OpenAIConverter(RequestDataConverter):
         }
 
         if model.tool_calling:
-            tools = self.get_tools()
+            tools = self.get_tools(extra_params)
             request_data["tools"] = tools
 
         if conversation.user_id:
@@ -319,7 +246,7 @@ class OllamaConverter(RequestDataConverter):
                     image = msg.content[msg.content.index(',') +1 :]
                     result_messages.append({
                         "role": msg.role.value,
-                        "content": f"for reference only image_id is {msg.image_id}"
+                        "content": f"uploaded file with image_id: {msg.image_id} use it as reference"
                     })
                     result_messages.append({
                         "role": msg.role.value,
@@ -329,7 +256,7 @@ class OllamaConverter(RequestDataConverter):
                 else:
                     result_messages.append({
                         "role": msg.role.value,
-                        "content": f"some image provided, for reference only image_id is {msg.image_id}"
+                        "content": f"image been provided, image_id: {msg.image_id} use it as reference"
                     })
 
             elif msg.content_type == MessageType.TOOL_USE and model.tool_calling:
@@ -351,7 +278,7 @@ class OllamaConverter(RequestDataConverter):
 
         return result_messages
 
-    def get_parameters(self, tool: Tool) -> dict[str, Any]:
+    def get_parameters(self, tool: AgentTool) -> dict[str, Any]:
         params: dict[str, Any] = {}
 
         if not tool.schema:
@@ -379,7 +306,7 @@ class OllamaConverter(RequestDataConverter):
 
         return params
 
-    def get_tools(self) -> list[dict[str, Any]] | None:
+    def get_tools(self, extra_params: dict[str, Any]) -> list[dict[str, Any]] | None:
         llm_config = self.conversation_manager.config
         tools: list[dict[str, Any]] = []
 
@@ -387,7 +314,7 @@ class OllamaConverter(RequestDataConverter):
             if AIProvider.OLLAMA not in tool.providers:
                 continue
 
-            if tool.is_enabled_fn and not tool.is_enabled_fn(self.conversation_manager):
+            if not tool.is_enabled(self.conversation_manager, extra_params):
                 continue
 
             tool_data: dict[str, Any] = {}
@@ -405,7 +332,7 @@ class OllamaConverter(RequestDataConverter):
             tools.append(tool_data)
         return tools
 
-    def get_request_parameters(self) -> dict[str, Any]:
+    def get_request_parameters(self, extra_params: dict[str, Any]) -> dict[str, Any]:
         conversation = self.conversation_manager
         model = conversation.config.model
 
@@ -421,7 +348,7 @@ class OllamaConverter(RequestDataConverter):
         }
 
         if model.tool_calling:
-            tools = self.get_tools()
+            tools = self.get_tools(extra_params)
             request_data["tools"] = tools
 
         if not conversation.config.thinking:
@@ -453,7 +380,7 @@ class AnthropicConverter(RequestDataConverter):
                     "content": [
                         {
                             'type': 'text',
-                            'text': f"for reference only image_id is {msg.image_id}"
+                            'text': f"uploaded file with image_id: {msg.image_id} use it as reference"
                         },
                         {
                             'type': 'image',
@@ -491,7 +418,7 @@ class AnthropicConverter(RequestDataConverter):
 
         return result_messages
 
-    def get_parameters(self, tool: Tool) -> dict[str, Any]:
+    def get_parameters(self, tool: AgentTool) -> dict[str, Any]:
         params: dict[str, Any] = {
             "type": "object",
             "properties": {},
@@ -521,7 +448,7 @@ class AnthropicConverter(RequestDataConverter):
 
         return params
 
-    def get_tools(self) -> list[dict[str, Any]] | None:
+    def get_tools(self, extra_params: dict[str, Any]) -> list[dict[str, Any]] | None:
         llm_config = self.conversation_manager.config
 
         tools: list[dict[str, Any]] = []
@@ -530,7 +457,7 @@ class AnthropicConverter(RequestDataConverter):
             if AIProvider.ANTHROPIC not in tool.providers:
                 continue
 
-            if tool.is_enabled_fn and not tool.is_enabled_fn(self.conversation_manager):
+            if not tool.is_enabled(self.conversation_manager, extra_params):
                 continue
 
             tool_data: dict[str, Any] = {
@@ -553,7 +480,7 @@ class AnthropicConverter(RequestDataConverter):
 
         return tools
 
-    def get_request_parameters(self) -> dict[str, Any]:
+    def get_request_parameters(self, extra_params: dict[str, Any]) -> dict[str, Any]:
         conversation = self.conversation_manager
         model = conversation.config.model
 
@@ -572,7 +499,7 @@ class AnthropicConverter(RequestDataConverter):
         }
 
         if model.tool_calling:
-            tools = self.get_tools()
+            tools = self.get_tools(extra_params)
             request_data["tools"] = tools
 
         if conversation.config.thinking and model.thinking:
@@ -583,6 +510,7 @@ class AnthropicConverter(RequestDataConverter):
 
 class ConversationManager:
     def __init__(self):
+        self.parent_manager: 'ConversationManager | None' = None
         self.id = round(time())
         self.converters: dict[AIProvider, RequestDataConverter] = {
             AIProvider.OPENAI: OpenAIConverter(self),
@@ -594,6 +522,15 @@ class ConversationManager:
         self.user_id: int | None = None
         self.memory: dict[str, Any] | None = None
         self.data_cache: dict[str, str] = {}
+
+    def invoke_subagent(self) -> 'ConversationManager':
+        """Creates a new ConversationManager that copies the configuration, has shared memory and a cache"""
+        sub_conversation = ConversationManager()
+        sub_conversation.parent_manager = self
+        sub_conversation.user_id = self.user_id
+        sub_conversation.config = replace(self.config)
+        sub_conversation.memory = self.memory
+        return sub_conversation
 
     def set_user_id(self, user_id: int | None):
         self.user_id = user_id
@@ -609,7 +546,10 @@ class ConversationManager:
 
     @functools.lru_cache(maxsize=5)
     def get_cached_data(self, data_id: str) -> str | bytes | None:
-        return self.data_cache.pop(data_id, None)
+        if data_id in self.data_cache:
+            return self.data_cache.pop(data_id, None)
+        if self.parent_manager:
+            return self.parent_manager.get_cached_data(data_id)
 
     def set_model(self, model: LLMModel):
         self.config = replace(self.config, model=model)
@@ -732,11 +672,8 @@ class ConversationManager:
 
         for tool in self.config.tools:
             if tool.type == 'function' and tool.name == tool_name:
-                if not tool.function:
-                    raise ValueError(f"Tool {tool_name} has no associated function.")
-
                 logger.info(f"Executing tool {tool_name} with arguments {arguments}")
-                return await tool.function(**arguments)
+                return await tool.execute(self, arguments)
 
         raise ValueError(f"Tool {tool_name} not found in conversation configuration.")
 
@@ -784,7 +721,6 @@ class OpenAIInstance:
                 arguments = json.loads(func_call.arguments)
 
             arguments = arguments | extra_params
-            arguments['conversation'] = conversation
 
             result = await conversation.execute_tool(func_call.name, arguments)
 
@@ -806,7 +742,7 @@ class OpenAIInstance:
         extra_params: dict[str, Any]
     ) -> AsyncGenerator[str, None]:
         for _ in range(3):
-            request_data = converter.get_request_parameters()
+            request_data = converter.get_request_parameters(extra_params)
 
             try:
                 stream = await self.client.responses.create(**request_data)
@@ -892,7 +828,6 @@ class ClaudeInstance:
                 continue
 
             arguments: dict[str, Any] = func_call.input | extra_params
-            arguments['conversation'] = conversation
 
             result = await conversation.execute_tool(func_call.name, arguments | extra_params)
 
@@ -909,7 +844,7 @@ class ClaudeInstance:
         extra_params: dict[str, Any]
     ) -> AsyncGenerator[str | None, None]:
         for _ in range(3):
-            request_data = converter.get_request_parameters()
+            request_data = converter.get_request_parameters(extra_params)
 
             try:
                 stream = await self.client.messages.create(**request_data)
@@ -1017,7 +952,6 @@ class OllamaInstance:
                 arguments = func_call.function.arguments
 
             arguments = arguments | extra_params
-            arguments['conversation'] = conversation
 
             result = await conversation.execute_tool(func_call.function.name, arguments)
 
@@ -1031,7 +965,7 @@ class OllamaInstance:
         extra_params: dict[str, Any]
     ) -> AsyncGenerator[str, None]:
         for _ in range(3):
-            request_data = converter.get_request_parameters()
+            request_data = converter.get_request_parameters(extra_params)
 
             full_response: str = ''
             function_calls: list[Any] = []
@@ -1071,7 +1005,7 @@ class OllamaInstance:
                 )
 
                 conversation.add_message(
-                    role=MessageRole.ASSISTANT,
+                    role=MessageRole.TOOL,
                     content=result,
                     content_type=MessageType.TOOL_RESULT,
                     tool_name=func_call.function.name,

@@ -42,5 +42,7 @@ class ConvEncoder(json.JSONEncoder):
             return obj.isoformat()
         if callable(obj):
             return str(obj)
+        if hasattr(obj, 'dump') and callable(obj.dump):
+            return obj.dump()
         # Let the base class default method raise the TypeError
         return super().default(obj)

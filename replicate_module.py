@@ -90,9 +90,9 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'nano-banana': {
-        'description': 'Gemini 2.5 Flash Image is Google’s state-of-the-art image generation and editing model',
-        'replicate_id': 'google/nano-banana',
+    'nano-banana-pro': {
+        'description': 'Google\'s state of the art image generation and editing model',
+        'replicate_id': 'google/nano-banana-pro',
         'input_field': 'prompt',
         'input_type': 'text',
         'output_type': 'photo',
@@ -116,9 +116,9 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'flux-pro': {
-        'description': 'State-of-the-art image generation with top of the line prompt following, visual quality, image detail and output diversity.',
-        'replicate_id': 'black-forest-labs/flux-pro',
+    'flux-2-pro': {
+        'description': 'High-quality image generation and editing with support for eight reference images',
+        'replicate_id': 'black-forest-labs/flux-2-pro',
         'input_type': 'text',
         'output_type': 'photo',
         'available_params': {
@@ -128,42 +128,17 @@ REPLICATE_MODELS = {
                 'min': 1,
                 'max': 5,
                 'description': 'Safety tolerance, 1 is most strict and 5 is most permissive'
-            }
-        }
-    },
-    'flux-edit':  {
-        'description': 'latent-consistency-model: Synthesizing High-Resolution Images with Few-Step Inference',
-        'replicate_id': 'black-forest-labs/flux-kontext-max',
-        'input_field': 'prompt',
-        'input_type': 'text',
-        'output_type': 'photo',
-        'available_params': {
-            'input_image': {
-                'type': 'photo',
-                'description': 'Input image'
-            }
-        }
-    },
-    'flux-m-image-edit': {
-        'description': 'An experimental FLUX Kontext model that can combine two input images',
-        'replicate_id': 'flux-kontext-apps/multi-image-kontext-max',
-        'input_type': 'text',
-        'input_field': 'prompt',
-        'output_type': 'photo',
-        'available_params': {
-            'input_image_1': {
-                'type': 'photo',
-                'description': 'Input image 1'
             },
-            'input_image_2': {
-                'type': 'photo',
-                'description': 'Input image 2'
-            },
+            'input_images': {
+                'type': 'photo_list',
+                'description': 'Input images'
+            }
+
         }
     },
-    'seedream-4': {
+    'seedream-4.5': {
         'description': 'Unified text-to-image generation and precise single-sentence editing at up to 4K',
-        'replicate_id': 'bytedance/seedream-4',
+        'replicate_id': 'bytedance/seedream-4.5',
         'input_field': 'prompt',
         'input_type': 'text',
         'output_type': 'photo',
@@ -259,9 +234,12 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
     if isinstance(result, list) and replicate_model['output_type'] == 'video':
         result_videos = []
         for video in result:
+            video_to_send = video
+            if isinstance(video, FileOutput):
+                video_to_send = video.url
             await botnav.await_coro_sending_action(
                 message.chat.id,
-                botnav.bot.send_video(message.chat.id, video),
+                botnav.bot.send_video(message.chat.id, video_to_send),
                 'upload_video'
             )
             result_videos.append(video)
@@ -270,9 +248,14 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
     elif isinstance(result, list) and replicate_model['output_type'] == 'photo':
         result_photos = []
         for photo in result:
+            image_to_send = photo
+
+            if isinstance(photo, FileOutput):
+                image_to_send = photo.url
+
             await botnav.await_coro_sending_action(
                 message.chat.id,
-                botnav.bot.send_photo(message.chat.id, photo),
+                botnav.bot.send_photo(message.chat.id, image_to_send),
                 'upload_photo'
             )
             result_photos.append(photo)

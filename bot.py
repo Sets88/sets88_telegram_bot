@@ -9,7 +9,7 @@ from telebot_nav import TeleBotNav
 from config import TELEGRAM_TOKEN
 from config import ALLOWED_USER_NAMES
 
-from lib.permissions import is_permitted
+from lib.permissions import is_replicate_available
 import config
 import openai_module
 import llm_module
@@ -23,17 +23,6 @@ from logger import logger
 class ExceptionH(ExceptionHandler):
     def handle(self, exception: Exception):
         logger.exception(exception)
-
-
-
-def is_replicate_on(botnav: TeleBotNav, message: Message) -> bool:
-    if not config.REPLICATE_API_KEY:
-        return False
-
-    if not is_permitted(botnav, message, 'can_use_replicate_models'):
-        return False
-
-    return True
 
 
 async def start(botnav: TeleBotNav, message: Message) -> None:
@@ -56,7 +45,7 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
         {
             '🧠 OpenAI': openai_module.start_openai if config.OPENAI_API_KEY else None,
             '🧠 LLM': llm_module.LLMRouter.run if config.OPENAI_API_KEY or config.ANTHROPIC_API_KEY else None,
-            '💻 Replicate': replicate_module.start_replicate if is_replicate_on(botnav, message) else None,
+            '💻 Replicate': replicate_module.start_replicate if is_replicate_available(botnav, message) else None,
             '📼 Youtube-DL': youtube_dl_module.start_youtube_dl,
             'Tools': tools_module.start_tools,
             'Scheduled scripts': scheduler_module.start_schedules if config.SCHEDULES else None,
