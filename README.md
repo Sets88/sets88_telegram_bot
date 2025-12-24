@@ -66,4 +66,5 @@ Personal Telegram bot with a comprehensive AI assistant platform:
 ```run.sh```
 
 ![How it looks](/images/bot_screenshot.png)
+![How it looks](/images/bot_screenshot3.png)
 ![How it looks](/images/bot_screenshot2.png)

@@ -275,51 +275,14 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
             botnav.bot.send_video(message.chat.id, result),
             'upload_video'
         )
-    elif isinstance(result, FileOutput):
-        mime_type, _ = mimetypes.guess_type(result.url)
-        if mime_type and mime_type.startswith('video'):
-            await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_video(message.chat.id, result.url),
-                'upload_video'
-            )
-            return result
-
-        elif mime_type and mime_type.startswith('image'):
-            await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_photo(message.chat.id, result.url),
-                'upload_photo'
-            )
-            return result
-        else:
-            document = await botnav.await_coro_sending_action(
-                message.chat.id,
-                download_file(result.url),
-                'upload_document'
-            )
-
-            await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_document(message.chat.id, document, timeout=120),
-                'upload_document'
-            )
-            return document
-
-    if replicate_model['output_type'] == 'text':
-        parts = []
-        for part in result:
-            await botnav.send_chat_action(message.chat.id, 'typing')
-            parts.append(part)
-
-            if len(parts) > 500:
-                await botnav.bot.send_message(message.chat.id, "".join(parts))
-                parts = []
-        await botnav.bot.send_message(message.chat.id, "".join(parts))
-        return "".join(parts)
-
     if replicate_model['output_type'] == 'file':
         if isinstance(result, FileOutput):
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_document(message.chat.id, result.url, timeout=120),
+                'typing'
+            )
+
             document = await botnav.await_coro_sending_action(
                 message.chat.id,
                 download_file(result.url),
@@ -364,6 +327,48 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                     'upload_document'
                 )
                 return document
+    elif isinstance(result, FileOutput):
+        mime_type, _ = mimetypes.guess_type(result.url)
+        if mime_type and mime_type.startswith('video'):
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_video(message.chat.id, result.url),
+                'upload_video'
+            )
+            return result
+
+        elif mime_type and mime_type.startswith('image'):
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_photo(message.chat.id, result.url),
+                'upload_photo'
+            )
+            return result
+        else:
+            document = await botnav.await_coro_sending_action(
+                message.chat.id,
+                download_file(result.url),
+                'upload_document'
+            )
+
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_document(message.chat.id, document, timeout=120),
+                'upload_document'
+            )
+            return document
+
+    if replicate_model['output_type'] == 'text':
+        parts = []
+        for part in result:
+            await botnav.send_chat_action(message.chat.id, 'typing')
+            parts.append(part)
+
+            if len(parts) > 500:
+                await botnav.bot.send_message(message.chat.id, "".join(parts))
+                parts = []
+        await botnav.bot.send_message(message.chat.id, "".join(parts))
+        return "".join(parts)
 
 
 async def replicate_set_select_param(param_name: str, value: str, botnav: TeleBotNav, message: Message):

@@ -1,7 +1,9 @@
 import json
 import os
 import functools
+import base64
 from time import time
+from datetime import datetime
 from typing import Any, get_args, Literal
 from typing import AsyncGenerator, BinaryIO
 from dataclasses import replace
@@ -522,6 +524,18 @@ class ConversationManager:
         self.user_id: int | None = None
         self.memory: dict[str, Any] | None = None
         self.data_cache: dict[str, str] = {}
+        self.openai_instance = openai_instance
+        self.claude_instance = claude_instance
+        self.ollama_instance = ollama_instance
+        self.last_message_time: float = time()
+
+    def refresh_last_message_time(self) -> None:
+        self.last_message_time = time()
+
+    def is_old_conversation(self, threshold_seconds: int) -> bool:
+        if self.messages and (self.last_message_time + threshold_seconds < time()):
+            return True
+        return False
 
     def invoke_subagent(self) -> 'ConversationManager':
         """Creates a new ConversationManager that copies the configuration, has shared memory and a cache"""
@@ -636,6 +650,8 @@ class ConversationManager:
         tool_call_params: dict[str, Any] | None = None,
         image_id: str | None = None
     ) -> UniversalMessage:
+        self.last_message_time = time()
+
         if self.config.one_off is True:
             self.messages.clear()
 
@@ -653,8 +669,19 @@ class ConversationManager:
         self.messages.append(message)
         return message
 
-    def clear_conversation(self):
-        self.messages.clear()
+    def clear_conversation(self, older_than: int | None = None) -> None:
+        # regernerate id to keep previous conversation saved
+        self.id = round(time())
+
+        if older_than is None:
+            self.messages.clear()
+            return
+
+        current_time = datetime.now()
+        self.messages = [
+            msg for msg in self.messages
+            if (current_time - msg.timestamp).total_seconds() < older_than
+        ]
 
     def has_tool(self, tool_name: str) -> bool:
         if not self.config.tools:
@@ -691,13 +718,13 @@ class ConversationManager:
         converter: RequestDataConverter = self.converters[current_provider]
 
         if current_provider == AIProvider.OPENAI:
-            async for chunk in openai_instance.make_request(self, converter, extra_params):
+            async for chunk in self.openai_instance.make_request(self, converter, extra_params):
                 yield chunk
         elif current_provider == AIProvider.ANTHROPIC:
-            async for chunk in claude_instance.make_request(self, converter, extra_params):
+            async for chunk in self.claude_instance.make_request(self, converter, extra_params):
                 yield chunk
         elif current_provider == AIProvider.OLLAMA:
-            async for chunk in ollama_instance.make_request(self, converter, extra_params):
+            async for chunk in self.ollama_instance.make_request(self, converter, extra_params):
                 yield chunk
 
 
@@ -734,6 +761,27 @@ class OpenAIInstance:
         )
 
         return response.text
+
+    async def image_generate(self, image_model: str, prompt: str, images: list[BinaryIO]) -> list[str]:
+        if images:
+            response = await self.client.images.edit(
+                model=image_model,
+                image=images,
+                prompt=prompt
+            )
+        else:
+            response = await self.client.images.generate(
+                model=image_model,
+                prompt=prompt
+            )
+
+        result_images = []
+
+        for image_data in response.data:
+            image_base64 = image_data.b64_json
+            result_images.append(base64.b64decode(image_base64))
+
+        return result_images
 
     async def make_request(
         self,

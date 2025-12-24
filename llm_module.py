@@ -21,7 +21,7 @@ from lib.permissions import is_llm_model_allowed, is_permitted, is_replicate_ava
 from lib.utils import ConvEncoder, MessageSplitter
 from lib.chat_roles import get_chat_roles
 from lib.agents import OpenAiWebSearchAgentTool, AntropicWebSearchAgentTool, SubAgentTool, AgentTool
-from lib.agents import DEFAULT_DRAWING_MODEL, DIFFUSION_MODELS_IMAGE_FIELDS
+from lib.agents import DEFAULT_DRAWING_MODEL, DIFFUSION_MODELS_IMAGE_FIELDS, OPENAI_IMAGE_MODELS
 from telebot_nav import TeleBotNav
 from logger import logger
 from help_content import HELP_CONTENT
@@ -35,7 +35,7 @@ AVAILABLE_LLM_MODELS = {
     'gpt-4.1': LLMModel(AIProvider.OPENAI, 'gpt-4.1', thinking=False),
     'gpt-5-nano': LLMModel(AIProvider.OPENAI, 'gpt-5-nano'),
     'gpt-5': LLMModel(AIProvider.OPENAI, 'gpt-5'),
-    'gpt-5.1': LLMModel(AIProvider.OPENAI, 'gpt-5.1'),
+    'gpt-5.2': LLMModel(AIProvider.OPENAI, 'gpt-5.2'),
     'o3': LLMModel(AIProvider.OPENAI, 'o3'),
     'claude-haiku-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-haiku-4-5'),
     'claude-sonnet-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-sonnet-4-5'),
@@ -69,6 +69,8 @@ SPEECH_MODELS = [
 
 DEFAULT_ROLE = 'Assistant'
 DEFAULT_MAX_TOKENS = 8192
+
+OLD_CONVERSATION_TIMEOUT = 3600 # 1 hour
 
 CONV_PATH = os.path.join(os.path.dirname(__file__), "conv")
 
@@ -477,8 +479,9 @@ class LLMRouter:
             f"{name}": functools.partial(
                 cls.switch_drawing_model,
                 name
-            ) for name in DIFFUSION_MODELS_IMAGE_FIELDS.keys()
+            ) for name in [*DIFFUSION_MODELS_IMAGE_FIELDS.keys(), *OPENAI_IMAGE_MODELS]
         }
+
         buttons['⬅️ Back'] = cls.show_chat_options
 
         await botnav.print_buttons(
@@ -507,6 +510,18 @@ class LLMRouter:
             HELP_CONTENT,
             parse_mode='Markdown'
         )
+
+    @classmethod
+    async def continue_with_new_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
+        conversation = get_or_create_conversation(botnav, message)
+        conversation.clear_conversation(older_than=OLD_CONVERSATION_TIMEOUT)
+        await cls.get_reply(botnav, message)
+
+    @classmethod
+    async def continue_with_old_conversation(cls, botnav: TeleBotNav, message: Message) -> None:
+        conversation = get_or_create_conversation(botnav, message)
+        conversation.refresh_last_message_time()
+        await cls.get_reply(botnav, message)
 
     @classmethod
     async def show_chat_options(cls, botnav: TeleBotNav, message: Message) -> None:
@@ -582,6 +597,7 @@ class LLMRouter:
             return
 
         conversation = get_or_create_conversation(botnav, message)
+        is_old_conversation = conversation.is_old_conversation(OLD_CONVERSATION_TIMEOUT)
 
         if text:
             conversation.add_message(
@@ -599,6 +615,17 @@ class LLMRouter:
                 content_type=MessageType.IMAGE,
                 image_id=image_id
             )
+
+        if is_old_conversation:
+            await botnav.print_buttons(
+                message.chat.id,
+                {
+                    '🧹 New': cls.continue_with_new_conversation,
+                    '📩 Old': cls.continue_with_old_conversation,
+                },
+                'Do you want to continue the old conversation or start a new one?'
+            )
+            return
 
         if message.state_data.get('delayed_message', False):
             await botnav.print_buttons(

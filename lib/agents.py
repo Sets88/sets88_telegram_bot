@@ -34,7 +34,11 @@ DIFFUSION_MODELS_IMAGE_FIELDS: dict[str, str] = {
     'flux-2-pro': 'input_images',
     'nano-banana-pro': 'image_input',
     'seedream-4.5': 'image_input',
-    'qwen-image-edit': 'image'
+    'qwen-image-edit': 'image',
+}
+
+OPENAI_IMAGE_MODELS: set[str] = {
+    'gpt-image-1.5'
 }
 
 
@@ -142,40 +146,37 @@ class ImageGenerationAgentTool(AgentTool):
             return False
         return is_replicate_available(botnav, message)
 
-    async def execute(
+    def get_images_list(self, conversation: 'ConversationManager', images: list[str] | None) -> list[BytesIO]:
+        image_bytes_list: list[BytesIO] = []
+
+        if images:
+            for image in images:
+                img_data = conversation.get_cached_data(image)
+
+                if not img_data:
+                    return []
+
+                image_bytes_list.append(BytesIO(img_data))
+        return image_bytes_list
+
+    async def execute_replicate(
         self,
         conversation: 'ConversationManager',
-        params: dict[str, Any],
+        botnav: TeleBotNav,
+        message: Message,
+        model: str,
+        prompt: str,
+        images: list[str] | None = None,
     ) -> str:
-        if (
-            'prompt' not in params or
-            'botnav' not in params or
-            'message' not in params
-        ):
-            return 'false'
-
-        botnav: TeleBotNav = params['botnav']
-        message: Message = params['message']
-        prompt: str = params['prompt']
-        images: list[str] | None = params.get('images', None)
-
-        model = conversation.config.drawing_model
-
         input_data = {
             'prompt': prompt
         }
 
-        if images and len(images) > 0:
+        image_bytes_list = self.get_images_list(conversation, images)
+
+        if image_bytes_list:
             image_field = DIFFUSION_MODELS_IMAGE_FIELDS.get(model, None)
-            input_data[image_field] = []
-
-            for img_id in images:
-                img_data = conversation.get_cached_data(img_id)
-
-                if not img_data:
-                    return 'false'
-
-                input_data[image_field].append(BytesIO(img_data))
+            input_data[image_field] = image_bytes_list
 
         try:
             result = await replicate_execute_and_send(botnav, message, model, input_data)
@@ -201,6 +202,63 @@ class ImageGenerationAgentTool(AgentTool):
             logger.exception(exc)
             return 'false'
 
+
+    async def execute_openai(
+        self,
+        conversation: 'ConversationManager',
+        botnav: TeleBotNav,
+        message: Message,
+        model: str,
+        prompt: str,
+        images: list[str] | None = None,
+    ) -> str:
+        image_bytes_list: list[BytesIO] = self.get_images_list(conversation, images)
+
+        result_image = await conversation.openai_instance.image_generate(
+            image_model=model,
+            prompt=prompt,
+            images=image_bytes_list
+        )
+        for image in result_image:
+            await botnav.await_coro_sending_action(
+                message.chat.id,
+                botnav.bot.send_photo(message.chat.id, image),
+                'upload_photo'
+            )
+
+            conversation.add_message(
+                MessageRole.ASSISTANT,
+                content=f'I uploaded image with reference image_id is {image}'
+            )
+        return 'true'
+
+    async def execute(
+        self,
+        conversation: 'ConversationManager',
+        params: dict[str, Any],
+    ) -> str:
+        if (
+            'prompt' not in params or
+            'botnav' not in params or
+            'message' not in params
+        ):
+            return 'false'
+
+        botnav: TeleBotNav = params['botnav']
+        message: Message = params['message']
+        prompt: str = params['prompt']
+        images: list[str] | None = params.get('images', None)
+
+        model = conversation.config.drawing_model
+
+        try:
+            if model in OPENAI_IMAGE_MODELS:
+                return await self.execute_openai(conversation, botnav, message, model, prompt, images)
+
+            return await self.execute_replicate(conversation, botnav, message, model, prompt, images)
+        except Exception as exc:
+            logger.exception(exc)
+            return 'false'
 
 class MemoryAgentTool(AgentTool):
     type = 'function'
