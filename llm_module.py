@@ -27,7 +27,7 @@ from logger import logger
 from help_content import HELP_CONTENT
 
 
-DEFAULT_MODEL = 'gpt-5-nano'
+DEFAULT_MODEL = 'claude-haiku-4-5'
 
 AVAILABLE_LLM_MODELS = {
     'gpt-4.1-mini': LLMModel(AIProvider.OPENAI, 'gpt-4.1-mini', thinking=False),
@@ -85,6 +85,17 @@ async def openai_send_speech(botnav: TeleBotNav, message: Message, text: str, sp
     )
 
     await botnav.bot.send_voice(message.chat.id, audio_file)
+
+
+def get_model_title(model: LLMModel) -> str:
+    title = model.name + ' '
+    if model.thinking:
+        title += "🧠"
+    if model.tool_calling:
+        title += "🔧"
+    if model.vision:
+        title += "👁️"
+    return title
 
 
 async def send_md_formated_or_plain(botnav: TeleBotNav, message: Message, text: str) -> None:
@@ -322,7 +333,7 @@ class LLMRouter:
     @classmethod
     async def show_models_list(cls, botnav: TeleBotNav, message: Message) -> None:
         buttons: dict[str, Callable[..., Coroutine[Any, Any, Any]]] = {
-            f"{name} ({model.provider.value})": functools.partial(
+            f"{get_model_title(model)} ({model.provider.value})": functools.partial(
                 cls.switch_llm_model,
                 model
             ) for name, model in get_available_models(botnav, message).items()
@@ -537,6 +548,7 @@ class LLMRouter:
         prettyfy_answers = "✅" if message.state_data.get('prettify_answers', True) else "❌"
         speech_model = message.state_data.get('speech_model', 'Off')
         drawing_on = conversation.config.drawing_model and is_replicate_available(botnav, message)
+        model_title = get_model_title(model)
 
         try:
             await botnav.print_buttons(
@@ -547,7 +559,7 @@ class LLMRouter:
                     f'📤 Send upon command {send_mode}': cls.switch_delayed_message_mode,
                     f'🔢 Max tokens({max_tokens})': cls.request_set_max_tokens,
                     '🏁 Set system prompt': cls.request_set_system_prompt,
-                    f'🤖 Model({model.name})': cls.show_models_list,
+                    f'🤖 Model({model_title})': cls.show_models_list,
                     f'👥 Role({role})': cls.show_roles_list,
                     f'💾 Memory {memory_enabled}': cls.show_memory_list if memory_permited else None,
                     f'🗣️ Speech Model({speech_model})': cls.show_speech_models_list,

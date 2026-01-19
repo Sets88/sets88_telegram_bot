@@ -472,11 +472,11 @@ def get_chat_roles(available_llm_models: dict[str, 'LLMModel'], default_model_na
         },
         'ELIM5': {
             'system_prompt': ELI5_PROMPT,
-            'model': available_llm_models['gpt-5'],
+            'model': available_llm_models['claude-sonnet-4-5'],
         },
         'Fixer': {
             'system_prompt': FIXER_PROMPT,
             'one_off': True,
-            'model': available_llm_models['gpt-5'],
+            'model': available_llm_models['claude-sonnet-4-5'],
         }
     }
