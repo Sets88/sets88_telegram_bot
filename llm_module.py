@@ -43,7 +43,7 @@ AVAILABLE_LLM_MODELS = {
     'qwen3:32b': LLMModel(AIProvider.OLLAMA, 'qwen3:32b', vision=False),
     'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', thinking=False, vision=False),
     'ministral-3:14b': LLMModel(AIProvider.OLLAMA, 'ministral-3:14b', thinking=False),
-    'qwen3:4b-instruct': LLMModel(AIProvider.OLLAMA, 'qwen3:4b-instruct', vision=False),
+    'qwen3:4b-instruct': LLMModel(AIProvider.OLLAMA, 'qwen3:4b-instruct', thinking=False, vision=False),
     'anthropic/claude-haiku-4.5': LLMModel(AIProvider.OPENROUTER, 'anthropic/claude-haiku-4.5', 'or/claude-haiku-4.5'),
     'anthropic/claude-sonnet-4.5': LLMModel(AIProvider.OPENROUTER, 'anthropic/claude-sonnet-4.5', 'or/claude-sonnet-4.5'),
     'anthropic/claude-opus-4.5': LLMModel(AIProvider.OPENROUTER, 'anthropic/claude-opus-4.5', 'or/claude-opus-4.5'),
