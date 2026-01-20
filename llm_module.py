@@ -53,6 +53,7 @@ AVAILABLE_LLM_MODELS = {
     'google/gemini-3-flash-preview': LLMModel(AIProvider.OPENROUTER, 'google/gemini-3-flash-preview', 'or/gemini-3-flash-preview'),
     'x-ai/grok-4': LLMModel(AIProvider.OPENROUTER, 'x-ai/grok-4', 'or/grok-4'),
     'deepseek/deepseek-v3.2': LLMModel(AIProvider.OPENROUTER, 'deepseek/deepseek-v3.2', 'or/deepseek-v3.2'),
+    'deepseek/deepseek-r1-0528:free': LLMModel(AIProvider.OPENROUTER, 'deepseek/deepseek-r1-0528:free', 'or/deepseek-r1-0528-free', tool_calling=False)
 }
 
 CHAT_ROLES = get_chat_roles(AVAILABLE_LLM_MODELS, config.DEFAULT_LLM_MODEL)
