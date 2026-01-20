@@ -13,6 +13,7 @@ class AIProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     OLLAMA = "ollama"
+    OPENROUTER = "openrouter"
 
 
 class MessageRole(Enum):
@@ -33,6 +34,7 @@ class MessageType(Enum):
 class LLMModel:
     provider: AIProvider
     name: str
+    title: str | None = None
     thinking: bool = True
     tool_calling: bool = True
     vision: bool = True

@@ -27,8 +27,6 @@ from logger import logger
 from help_content import HELP_CONTENT
 
 
-DEFAULT_MODEL = 'claude-haiku-4-5'
-
 AVAILABLE_LLM_MODELS = {
     'gpt-4.1-mini': LLMModel(AIProvider.OPENAI, 'gpt-4.1-mini', thinking=False),
     'o4-mini': LLMModel(AIProvider.OPENAI, 'o4-mini'),
@@ -45,10 +43,19 @@ AVAILABLE_LLM_MODELS = {
     'qwen3:32b': LLMModel(AIProvider.OLLAMA, 'qwen3:32b', vision=False),
     'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', thinking=False, vision=False),
     'ministral-3:14b': LLMModel(AIProvider.OLLAMA, 'ministral-3:14b', thinking=False),
-    'qwen3:4b-instruct': LLMModel(AIProvider.OLLAMA, 'qwen3:4b-instruct', vision=False)
+    'qwen3:4b-instruct': LLMModel(AIProvider.OLLAMA, 'qwen3:4b-instruct', vision=False),
+    'anthropic/claude-haiku-4.5': LLMModel(AIProvider.OPENROUTER, 'anthropic/claude-haiku-4.5', 'or/claude-haiku-4.5'),
+    'anthropic/claude-sonnet-4.5': LLMModel(AIProvider.OPENROUTER, 'anthropic/claude-sonnet-4.5', 'or/claude-sonnet-4.5'),
+    'anthropic/claude-opus-4.5': LLMModel(AIProvider.OPENROUTER, 'anthropic/claude-opus-4.5', 'or/claude-opus-4.5'),
+    'openai/gpt-5.2': LLMModel(AIProvider.OPENROUTER, 'openai/gpt-5.2', 'or/gpt-5.2'),
+    'openai/gpt-5-nano': LLMModel(AIProvider.OPENROUTER, 'openai/gpt-5-nano', 'or/gpt-5-nano'),
+    'google/gemini-3-pro-preview': LLMModel(AIProvider.OPENROUTER, 'google/gemini-3-pro-preview', 'or/gemini-3-pro-preview'),
+    'google/gemini-3-flash-preview': LLMModel(AIProvider.OPENROUTER, 'google/gemini-3-flash-preview', 'or/gemini-3-flash-preview'),
+    'x-ai/grok-4': LLMModel(AIProvider.OPENROUTER, 'x-ai/grok-4', 'or/grok-4'),
+    'deepseek/deepseek-v3.2': LLMModel(AIProvider.OPENROUTER, 'deepseek/deepseek-v3.2', 'or/deepseek-v3.2'),
 }
 
-CHAT_ROLES = get_chat_roles(AVAILABLE_LLM_MODELS, DEFAULT_MODEL)
+CHAT_ROLES = get_chat_roles(AVAILABLE_LLM_MODELS, config.DEFAULT_LLM_MODEL)
 
 DEFAULT_TOOLS: list[Type[AgentTool]] = [
     OpenAiWebSearchAgentTool, AntropicWebSearchAgentTool, SubAgentTool
@@ -88,7 +95,7 @@ async def openai_send_speech(botnav: TeleBotNav, message: Message, text: str, sp
 
 
 def get_model_title(model: LLMModel) -> str:
-    title = model.name + ' '
+    title = (model.title or model.name) + ' '
     if model.thinking:
         title += "🧠"
     if model.tool_calling:
@@ -125,6 +132,8 @@ def get_available_models(botnav: TeleBotNav, message: Message) -> dict[str, LLMM
         if model.provider == AIProvider.ANTHROPIC and not config.ANTHROPIC_API_KEY:
             continue
         if model.provider == AIProvider.OLLAMA and not config.OLLAMA_HOST:
+            continue
+        if model.provider == AIProvider.OPENROUTER and not config.OPENROUTER_API_KEY:
             continue
 
         if not is_llm_model_allowed(botnav, message, model):
@@ -169,9 +178,9 @@ def set_role(botnav: TeleBotNav, message: Message, conversation: ConversationMan
         if is_llm_model_allowed(botnav, message, model):
             conversation.set_model(model)
         else:
-            conversation.set_model(AVAILABLE_LLM_MODELS[DEFAULT_MODEL])
+            conversation.set_model(AVAILABLE_LLM_MODELS[config.DEFAULT_LLM_MODEL])
     else:
-        conversation.set_model(AVAILABLE_LLM_MODELS[DEFAULT_MODEL])
+        conversation.set_model(AVAILABLE_LLM_MODELS[config.DEFAULT_LLM_MODEL])
 
 
 def get_new_conversation_manager(botnav: TeleBotNav, message: Message) -> ConversationManager:

@@ -22,6 +22,10 @@ REPLICATE_API_KEY = configdata.get('REPLICATE_API_KEY', None)
 
 ANTHROPIC_API_KEY = configdata.get('ANTHROPIC_API_KEY', None)
 
+DEFAULT_LLM_MODEL = configdata.get('DEFAULT_LLM_MODEL', 'claude-haiku-4-5')
+
+OPENROUTER_API_KEY = configdata.get('OPENROUTER_API_KEY', None)
+
 YT_DL_DIR = configdata.get('YT_DL_DIR', None)
 YT_DL_URL = configdata.get('YT_DL_URL', None)
 SCHEDULES = configdata.get('SCHEDULES', None)

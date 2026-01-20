@@ -15,7 +15,7 @@ import anthropic
 import ollama
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent, ResponseFunctionToolCall
-from openai.types.responses import ResponseOutputItemAddedEvent, ResponseFunctionCallArgumentsDeltaEvent
+from openai.types.responses import ResponseOutputItemAddedEvent, ResponseFunctionCallArgumentsDeltaEvent, ResponseCompletedEvent
 
 import config
 from lib.agents import AgentTool
@@ -359,6 +359,10 @@ class OllamaConverter(RequestDataConverter):
         return request_data
 
 
+class OpenRouterConverter(OpenAIConverter):
+    pass
+
+
 class AnthropicConverter(RequestDataConverter):
     def messages_to_provider_format(
         self,
@@ -518,15 +522,17 @@ class ConversationManager:
             AIProvider.OPENAI: OpenAIConverter(self),
             AIProvider.ANTHROPIC: AnthropicConverter(self),
             AIProvider.OLLAMA: OllamaConverter(self),
+            AIProvider.OPENROUTER: OpenRouterConverter(self),
         }
         self.messages: list[UniversalMessage] = []
         self.config: ConversationConfig = ConversationConfig()
         self.user_id: int | None = None
         self.memory: dict[str, Any] | None = None
         self.data_cache: dict[str, str] = {}
-        self.openai_instance = openai_instance
-        self.claude_instance = claude_instance
-        self.ollama_instance = ollama_instance
+        self.openai_instance: OpenAIInstance = openai_instance
+        self.claude_instance: ClaudeInstance = claude_instance
+        self.ollama_instance: OllamaInstance = ollama_instance
+        self.openrouter_instance: OpenRouterInstance = openrouter_instance
         self.last_message_time: float = time()
 
     def refresh_last_message_time(self) -> None:
@@ -726,6 +732,9 @@ class ConversationManager:
         elif current_provider == AIProvider.OLLAMA:
             async for chunk in self.ollama_instance.make_request(self, converter, extra_params):
                 yield chunk
+        elif current_provider == AIProvider.OPENROUTER:
+            async for chunk in self.openrouter_instance.make_request(self, converter, extra_params):
+                yield chunk
 
 
 class OpenAIInstance:
@@ -808,8 +817,17 @@ class OpenAIInstance:
                     yield response
                     return
 
+                if isinstance(event, ResponseCompletedEvent) and event.response.output:
+                    for item in event.response.output:
+                        if (
+                            isinstance(item, ResponseFunctionToolCall) and
+                            item.call_id in function_calls and
+                            not function_calls[item.call_id].arguments
+                        ):
+                            function_calls[item.call_id] = item
+
                 if isinstance(event, ResponseOutputItemAddedEvent) and isinstance(event.item, ResponseFunctionToolCall):
-                    function_calls[event.item.id] = event.item
+                    function_calls[event.item.call_id] = event.item
 
                 if isinstance(event, ResponseFunctionCallArgumentsDeltaEvent):
                     if not function_calls.get(event.item_id):
@@ -979,6 +997,13 @@ class ClaudeInstance:
             if not executed:
                 break
 
+class OpenRouterInstance(OpenAIInstance):
+    def __init__(self):
+        self.client = AsyncOpenAI(
+            api_key=config.OPENROUTER_API_KEY,
+            base_url="https://openrouter.ai/api/v1",
+            timeout=LLM_RESPONSE_TIMEOUT
+        )
 
 class OllamaInstance:
     def __init__(self):
@@ -1067,3 +1092,4 @@ class OllamaInstance:
 openai_instance = OpenAIInstance()
 claude_instance = ClaudeInstance()
 ollama_instance = OllamaInstance()
+openrouter_instance = OpenRouterInstance()

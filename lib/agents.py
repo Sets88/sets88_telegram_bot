@@ -105,7 +105,7 @@ class AntropicWebSearchAgentTool(AgentTool):
 
 class GetCurrentTimeAgentTool(AgentTool):
     type = 'function'
-    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA]
+    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'get_current_time'
     description = 'Returns the current time in YYYY-MM-DD HH:MM:SS format'
     schema = {}
@@ -120,7 +120,7 @@ class GetCurrentTimeAgentTool(AgentTool):
 
 class ImageGenerationAgentTool(AgentTool):
     type = 'function'
-    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA]
+    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'image_generation'
     description = 'Generates or edits an image and sends it to the user based on the provided prompt;' + \
         'In case of editing, the original image_id list should be provided as a reference. ' + \
@@ -262,7 +262,7 @@ class ImageGenerationAgentTool(AgentTool):
 
 class MemoryAgentTool(AgentTool):
     type = 'function'
-    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA]
+    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'memory'
     description = (
         'Saves facts about user as key-value pair to the user memory, where key is a short to ' +
@@ -308,7 +308,7 @@ class MemoryAgentTool(AgentTool):
 
 class FetchUrlAgentTool(AgentTool):
     type = 'function'
-    providers = [AIProvider.ANTHROPIC, AIProvider.OLLAMA]
+    providers = [AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'fetch_http_content'
     description = 'Fetches and returns the textual content of the specified HTTP or HTTPS URL, or ERROR if fetching fails'
     schema = {
@@ -345,7 +345,7 @@ class FetchUrlAgentTool(AgentTool):
 
 class SubAgentTool(AgentTool):
     type = 'function'
-    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA]
+    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'subagent'
     _description = 'An autonomous agent that can use multiple tools to accomplish complex tasks, capabilities are: \n'
     description = ''
