@@ -48,6 +48,7 @@ AVAILABLE_LLM_MODELS = {
     'anthropic/claude-sonnet-4.5': LLMModel(AIProvider.OPENROUTER, 'anthropic/claude-sonnet-4.5', 'or/claude-sonnet-4.5'),
     'anthropic/claude-opus-4.5': LLMModel(AIProvider.OPENROUTER, 'anthropic/claude-opus-4.5', 'or/claude-opus-4.5'),
     'openai/gpt-5.2': LLMModel(AIProvider.OPENROUTER, 'openai/gpt-5.2', 'or/gpt-5.2'),
+    'openai/gpt-5-mini': LLMModel(AIProvider.OPENROUTER, 'openai/gpt-5-mini', 'or/gpt-5-mini'),
     'openai/gpt-5-nano': LLMModel(AIProvider.OPENROUTER, 'openai/gpt-5-nano', 'or/gpt-5-nano'),
     'google/gemini-3-pro-preview': LLMModel(AIProvider.OPENROUTER, 'google/gemini-3-pro-preview', 'or/gemini-3-pro-preview'),
     'google/gemini-3-flash-preview': LLMModel(AIProvider.OPENROUTER, 'google/gemini-3-flash-preview', 'or/gemini-3-flash-preview'),
