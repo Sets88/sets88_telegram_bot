@@ -17,6 +17,7 @@ import replicate_module
 import youtube_dl_module
 import scheduler_module
 import tools_module
+import greek_learning_module
 from logger import logger
 
 
@@ -45,6 +46,7 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
         {
             '🧠 OpenAI': openai_module.start_openai if config.OPENAI_API_KEY else None,
             '🧠 LLM': llm_module.LLMRouter.run if config.OPENAI_API_KEY or config.ANTHROPIC_API_KEY else None,
+            '🇬🇷 Greek Learning': greek_learning_module.start_greek if config.GREEK_LEARNING_WEBAPP_URL else None,
             '💻 Replicate': replicate_module.start_replicate if is_replicate_available(botnav, message) else None,
             '📼 Youtube-DL': youtube_dl_module.start_youtube_dl,
             'Tools': tools_module.start_tools,
@@ -60,6 +62,11 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
 async def main() -> None:
     if config.SCHEDULES:
         await scheduler_module.manager.run(botnav)
+
+    # Start Greek Learning Web App server
+    if config.GREEK_LEARNING_WEBAPP_URL:
+        asyncio.create_task(greek_learning_module.start_web_app(botnav))
+
     await botnav.send_init_commands({'start': '🏁 Start the bot'})
     await botnav.set_global_default_handler(start)
     await botnav.bot.polling(non_stop=True)

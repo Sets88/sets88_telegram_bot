@@ -20,6 +20,9 @@ docker run -d \
     -v $(pwd)/conv:/app/conv \
     -v $(pwd)/schedules:/app/schedules \
     -v $(pwd)/uploads:/app/uploads \
+    -v $(pwd)/greek_words:/app/greek_words \
+    -v $(pwd)/greek_learned:/app/greek_learned \
+    -v $(pwd)/greek_stats:/app/greek_stats \
     -v $(pwd)/memory:/app/memory \
     -v $(pwd)/config.json:/app/config.json \
     -v $(pwd)/log.txt:/app/log.txt \
@@ -30,3 +33,6 @@ docker exec -u 0 gptchat_bot chown 1000:1000 /app/conv
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/uploads
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/log.txt
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/schedules
+docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_words
+docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_learned
+docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_stats

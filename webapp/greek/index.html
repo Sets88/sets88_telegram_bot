@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Greek Learning</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Loading Screen -->
+        <div id="loading-screen" class="screen active">
+            <div class="loader"></div>
+            <p>Loading...</p>
+        </div>
+
+        <!-- Main Screen: Word Lists -->
+        <div id="main-screen" class="screen">
+            <div class="tabs">
+                <button class="tab active" data-tab="learning">Learning</button>
+                <button class="tab" data-tab="learned">Learned</button>
+                <button class="tab" data-tab="stats">Stats</button>
+            </div>
+
+            <div class="tab-content">
+                <!-- Learning Tab -->
+                <div id="learning-tab" class="tab-panel active">
+                    <div class="header">
+                        <h2>Your Learning Words</h2>
+                        <button id="fetch-words-btn" class="btn btn-primary">+ Fetch New Words</button>
+                    </div>
+
+                    <button id="practice-btn" class="btn btn-success btn-large">Practice</button>
+
+                    <div id="learning-words-list" class="words-list"></div>
+
+                </div>
+
+                <!-- Learned Tab -->
+                <div id="learned-tab" class="tab-panel">
+                    <h2>Learned Words</h2>
+                    <div id="learned-words-list" class="words-list"></div>
+                </div>
+
+                <!-- Stats Tab -->
+                <div id="stats-tab" class="tab-panel">
+                    <h2>Statistics</h2>
+                    <div id="stats-content"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exercise Screen -->
+        <div id="exercise-screen" class="screen">
+            <div class="exercise-header">
+                <button id="exit-exercise-btn" class="btn btn-secondary">Exit</button>
+                <div id="exercise-counter"></div>
+            </div>
+
+            <!-- Exercise Loading Spinner -->
+            <div id="exercise-loading" class="exercise-loading hidden">
+                <div class="loader"></div>
+                <p>Generating exercise...</p>
+            </div>
+
+            <div id="exercise-content" class="exercise-content">
+                <div id="exercise-question" class="question"></div>
+                <div id="exercise-sentence" class="sentence"></div>
+                <div id="exercise-sentence-clickable" class="sentence-clickable"></div>
+                <div id="exercise-translation" class="translation"></div>
+
+                <div id="exercise-options" class="options"></div>
+
+                <div id="exercise-feedback" class="feedback hidden"></div>
+
+                <button id="next-exercise-btn" class="btn btn-primary hidden">Next</button>
+                <button id="mark-learned-btn" class="btn btn-success hidden">Mark as Learned</button>
+            </div>
+        </div>
+
+        <!-- Fetch Words Modal -->
+        <div id="fetch-words-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Fetch New Words</h3>
+                <p>How many words would you like to fetch?</p>
+                <input type="number" id="fetch-count-input" min="1" max="20" value="5" class="input">
+                <div class="modal-buttons">
+                    <button id="fetch-confirm-btn" class="btn btn-primary">Fetch</button>
+                    <button id="fetch-cancel-btn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exercise Type Selection Modal -->
+        <div id="exercise-type-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Choose Exercise Type</h3>
+
+                <!-- Word Type Filter -->
+                <div class="word-type-filter">
+                    <label for="word-type-select" class="filter-label">Filter by word type:</label>
+                    <select id="word-type-select" class="word-type-dropdown">
+                        <option value="">All types</option>
+                        <option value="noun">Nouns</option>
+                        <option value="verb">Verbs</option>
+                        <option value="adjective">Adjectives</option>
+                    </select>
+                </div>
+
+                <div class="exercise-type-buttons">
+                    <button id="sentence-exercise-btn" class="btn btn-primary btn-exercise-type">
+                        📝 Sentence Context
+                        <span class="exercise-type-desc">Find the word in a sentence</span>
+                    </button>
+                    <button id="matching-exercise-btn" class="btn btn-primary btn-exercise-type">
+                        🎴 Matching Cards
+                        <span class="exercise-type-desc">Match 10 pairs of words</span>
+                    </button>
+                </div>
+                <button id="exercise-type-cancel-btn" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

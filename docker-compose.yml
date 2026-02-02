@@ -8,4 +8,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./uploads:/app/uploads
+      - ./greek_words:/app/greek_words
+      - ./greek_learned:/app/greek_learned
+      - ./greek_stats:/app/greek_stats
+    ports:
+      - "8180:8180"
     entrypoint: ["sh", "/app/entrypoint.sh"]

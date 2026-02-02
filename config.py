@@ -33,3 +33,7 @@ SCHEDULES = configdata.get('SCHEDULES', None)
 USER_PERMISSIONS = configdata.get('USER_PERMISSIONS', {})
 
 MCP_FETCH_URL = configdata.get('MCP_FETCH_URL', None)
+
+# Greek Learning Web App configuration
+GREEK_LEARNING_WEBAPP_PORT = configdata.get('GREEK_LEARNING_WEBAPP_PORT', 8180)
+GREEK_LEARNING_WEBAPP_URL = configdata.get('GREEK_LEARNING_WEBAPP_URL', 'http://localhost:8180/greek/')
