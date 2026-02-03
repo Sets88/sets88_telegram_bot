@@ -22,6 +22,10 @@ const state = {
     exerciseCount: 0,
     exerciseType: null,
     selectedWordType: '', // Word type filter: '' = all, 'noun', 'verb', 'adjective'
+    verbFormPreferences: {
+        tenses: ['present'],
+        persons: ['1st']
+    },
     matchingState: {
         selectedLeft: null,
         selectedRight: null,
@@ -123,6 +127,47 @@ async function loadStats() {
     }
 }
 
+async function addCustomWord(wordText) {
+    try {
+        const loadingEl = document.getElementById('add-word-loading');
+        const errorEl = document.getElementById('add-word-error');
+
+        // Show loading, hide error
+        loadingEl.classList.remove('hidden');
+        errorEl.classList.add('hidden');
+
+        const data = await apiRequest('add-word', {
+            method: 'POST',
+            body: JSON.stringify({
+                word: wordText,
+                language: 'auto'
+            })
+        });
+
+        // Hide loading
+        loadingEl.classList.add('hidden');
+
+        if (data.success) {
+            // Reload words list
+            await loadWords();
+            hideAddCustomWordModal();
+            tg.showAlert(`Word added successfully: ${data.word.greek} - ${data.word.russian}`);
+        } else {
+            // Show error
+            errorEl.textContent = data.error || 'Failed to add word';
+            errorEl.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Error adding custom word:', error);
+        const loadingEl = document.getElementById('add-word-loading');
+        const errorEl = document.getElementById('add-word-error');
+
+        loadingEl.classList.add('hidden');
+        errorEl.textContent = error.message || 'Failed to add word';
+        errorEl.classList.remove('hidden');
+    }
+}
+
 async function fetchNewWords(count) {
     try {
         showLoading();
@@ -147,7 +192,31 @@ function updateSelectedWordType() {
     if (select) {
         state.selectedWordType = select.value;
         console.log('Selected word type:', state.selectedWordType || 'all');
+
+        // Show/hide verb form section
+        const verbFormSection = document.getElementById('verb-form-section');
+        if (verbFormSection) {
+            if (select.value === 'verb') {
+                verbFormSection.classList.remove('hidden');
+            } else {
+                verbFormSection.classList.add('hidden');
+            }
+        }
     }
+}
+
+function getVerbFormPreferences() {
+    const tenseCheckboxes = document.querySelectorAll('input[name="tense"]:checked');
+    const personCheckboxes = document.querySelectorAll('input[name="person"]:checked');
+
+    const tenses = Array.from(tenseCheckboxes).map(cb => cb.value);
+    const persons = Array.from(personCheckboxes).map(cb => cb.value);
+
+    // Default to all if none selected
+    return {
+        tenses: tenses.length > 0 ? tenses : ['present', 'past', 'future', 'other'],
+        persons: persons.length > 0 ? persons : ['1st', '2nd', '3rd', 'mixed']
+    };
 }
 
 async function deleteWord(wordId) {
@@ -203,6 +272,15 @@ async function getExercise(wordId = null, direction = 'random') {
         // Add word type filter if selected
         if (state.selectedWordType) {
             url += `&word_type=${state.selectedWordType}`;
+
+            // Add verb form preferences if word type is verb
+            if (state.selectedWordType === 'verb') {
+                const prefs = getVerbFormPreferences();
+                state.verbFormPreferences = prefs;  // Store in state
+
+                url += `&verb_tenses=${prefs.tenses.join(',')}`;
+                url += `&verb_persons=${prefs.persons.join(',')}`;
+            }
         }
 
         const data = await apiRequest(url);
@@ -288,6 +366,478 @@ async function validateMatchingResults(results) {
     }
 }
 
+// ========== Word Details & Long Press ==========
+
+function detectLanguage(text) {
+    /**
+     * Detect if text is Greek or Russian
+     * Returns: 'greek', 'russian', or 'unknown'
+     */
+    const greekRegex = /[\u0370-\u03FF\u1F00-\u1FFF]/; // Greek characters
+    const russianRegex = /[\u0400-\u04FF]/; // Cyrillic characters
+
+    const hasGreek = greekRegex.test(text);
+    const hasRussian = russianRegex.test(text);
+
+    if (hasGreek && !hasRussian) {
+        return 'greek';
+    } else if (hasRussian && !hasGreek) {
+        return 'russian';
+    } else if (hasGreek && hasRussian) {
+        // Mixed - count which has more characters
+        const greekCount = (text.match(greekRegex) || []).length;
+        const russianCount = (text.match(russianRegex) || []).length;
+        return greekCount > russianCount ? 'greek' : 'russian';
+    } else {
+        return 'unknown';
+    }
+}
+
+async function getWordDetails(wordId) {
+    try {
+        const data = await apiRequest(`word-details/${wordId}`);
+        return data;
+    } catch (error) {
+        console.error('Error getting word details:', error);
+        throw error;
+    }
+}
+
+async function getWordFormsByText(greekWord, russianWord = '', wordType = 'unknown') {
+    try {
+        const data = await apiRequest('word-forms', {
+            method: 'POST',
+            body: JSON.stringify({
+                greek: greekWord,
+                russian: russianWord,
+                word_type: wordType
+            })
+        });
+        return data;
+    } catch (error) {
+        console.error('Error getting word forms by text:', error);
+        throw error;
+    }
+}
+
+async function translateRussianToGreek(russianWord) {
+    try {
+        const data = await apiRequest('translate-russian', {
+            method: 'POST',
+            body: JSON.stringify({
+                russian: russianWord
+            })
+        });
+        return data;
+    } catch (error) {
+        console.error('Error translating Russian to Greek:', error);
+        throw error;
+    }
+}
+
+function attachLongPressHandlers() {
+    const wordCards = document.querySelectorAll('.word-card');
+
+    wordCards.forEach(card => {
+        let pressTimer = null;
+        let isLongPress = false;
+
+        const startPress = (e) => {
+            // Don't trigger on button clicks
+            if (e.target.closest('.word-actions')) {
+                return;
+            }
+
+            isLongPress = false;
+            pressTimer = setTimeout(() => {
+                isLongPress = true;
+                const wordId = card.dataset.wordId;
+                if (wordId) {
+                    showWordDetailsModal(wordId);
+                    // Haptic feedback
+                    if (tg.HapticFeedback) {
+                        tg.HapticFeedback.impactOccurred('medium');
+                    }
+                }
+            }, 500); // 500ms for long press
+        };
+
+        const cancelPress = () => {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        };
+
+        // Touch events
+        card.addEventListener('touchstart', startPress, { passive: true });
+        card.addEventListener('touchend', cancelPress);
+        card.addEventListener('touchmove', cancelPress);
+        card.addEventListener('touchcancel', cancelPress);
+
+        // Mouse events (for desktop testing)
+        card.addEventListener('mousedown', startPress);
+        card.addEventListener('mouseup', cancelPress);
+        card.addEventListener('mouseleave', cancelPress);
+    });
+}
+
+function attachLongPressToSentenceWords() {
+    const sentenceWords = document.querySelectorAll('.sentence-word');
+
+    sentenceWords.forEach(wordEl => {
+        let pressTimer = null;
+
+        const startPress = (e) => {
+            // Prevent triggering click during long press
+            e.stopPropagation();
+
+            pressTimer = setTimeout(() => {
+                const wordId = wordEl.dataset.wordId;
+                const wordText = wordEl.dataset.word;
+
+                if (wordId) {
+                    // We have word_id, show details directly
+                    showWordDetailsModal(wordId);
+                } else if (wordText) {
+                    // Try to find word by text in current exercise
+                    showWordDetailsModalByText(wordText);
+                }
+
+                // Haptic feedback
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.impactOccurred('medium');
+                }
+            }, 500); // 500ms for long press
+        };
+
+        const cancelPress = () => {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        };
+
+        // Touch events
+        wordEl.addEventListener('touchstart', startPress, { passive: false });
+        wordEl.addEventListener('touchend', cancelPress);
+        wordEl.addEventListener('touchmove', cancelPress);
+        wordEl.addEventListener('touchcancel', cancelPress);
+
+        // Mouse events (for desktop testing)
+        wordEl.addEventListener('mousedown', startPress);
+        wordEl.addEventListener('mouseup', cancelPress);
+        wordEl.addEventListener('mouseleave', cancelPress);
+    });
+}
+
+function attachLongPressToMatchingCards() {
+    const matchingCards = document.querySelectorAll('.matching-card');
+
+    matchingCards.forEach(card => {
+        let pressTimer = null;
+
+        const startPress = (e) => {
+            e.stopPropagation();
+
+            // Don't trigger on already matched cards
+            if (card.classList.contains('matched')) {
+                return;
+            }
+
+            pressTimer = setTimeout(() => {
+                const wordId = card.dataset.id;
+                if (wordId) {
+                    showWordDetailsModal(wordId);
+
+                    // Haptic feedback
+                    if (tg.HapticFeedback) {
+                        tg.HapticFeedback.impactOccurred('medium');
+                    }
+                }
+            }, 500);
+        };
+
+        const cancelPress = () => {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        };
+
+        // Touch events
+        card.addEventListener('touchstart', startPress, { passive: false });
+        card.addEventListener('touchend', cancelPress);
+        card.addEventListener('touchmove', cancelPress);
+        card.addEventListener('touchcancel', cancelPress);
+
+        // Mouse events
+        card.addEventListener('mousedown', startPress);
+        card.addEventListener('mouseup', cancelPress);
+        card.addEventListener('mouseleave', cancelPress);
+    });
+}
+
+async function showWordDetailsModal(wordId) {
+    const modal = document.getElementById('word-details-modal');
+    const loading = document.getElementById('word-details-loading');
+    const content = document.getElementById('word-details-content');
+
+    // Find word in state
+    let word = state.learningWords.find(w => w.id === wordId);
+    if (!word) {
+        word = state.learnedWords.find(w => w.id === wordId);
+    }
+
+    if (!word) {
+        console.error('Word not found:', wordId);
+        return;
+    }
+
+    // Show modal
+    modal.classList.remove('hidden');
+
+    // Set basic info
+    document.getElementById('word-details-title').textContent = 'Word Details';
+    document.getElementById('word-details-greek').textContent = word.greek;
+    document.getElementById('word-details-russian').textContent = word.russian;
+    document.getElementById('word-details-type').textContent = word.word_type || 'unknown';
+
+    // Show loading
+    loading.classList.remove('hidden');
+    content.style.opacity = '0.5';
+
+    try {
+        // Fetch word forms from API
+        const details = await getWordDetails(wordId);
+
+        // Hide loading
+        loading.classList.add('hidden');
+        content.style.opacity = '1';
+
+        // Display word forms
+        if (details.forms && details.forms.length > 0) {
+            const formsSection = document.getElementById('word-forms-section');
+            const formsList = document.getElementById('word-forms-list');
+
+            formsSection.classList.remove('hidden');
+
+            formsList.innerHTML = details.forms.map(form => `
+                <div class="word-form-item">
+                    <div class="word-form-label">${form.label}:</div>
+                    <div class="word-form-value">
+                        <span class="word-form-greek">${form.greek}</span>
+                        <span class="word-form-russian">${form.russian}</span>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            document.getElementById('word-forms-section').classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error loading word details:', error);
+        loading.classList.add('hidden');
+        content.style.opacity = '1';
+        tg.showAlert('Failed to load word details');
+    }
+}
+
+async function showWordDetailsModalByText(wordText) {
+    // Detect language first
+    const language = detectLanguage(wordText);
+    console.log(`Detected language for "${wordText}": ${language}`);
+
+    // Try to find word in learning or learned lists by matching text
+    const normalizeText = (text) => text.toLowerCase().trim();
+    const normalizedSearch = normalizeText(wordText);
+
+    // Search in learning words
+    let word = state.learningWords.find(w =>
+        normalizeText(w.greek).includes(normalizedSearch) ||
+        normalizeText(w.russian).includes(normalizedSearch)
+    );
+
+    // If not found, search in learned words
+    if (!word) {
+        word = state.learnedWords.find(w =>
+            normalizeText(w.greek).includes(normalizedSearch) ||
+            normalizeText(w.russian).includes(normalizedSearch)
+        );
+    }
+
+    if (word) {
+        // Found word in user's lists, show details using word_id
+        await showWordDetailsModal(word.id);
+    } else if (language === 'russian') {
+        // Russian word not in user's list - translate to Greek first
+        console.log(`Russian word "${wordText}" not found in lists, translating to Greek first`);
+        await showWordDetailsModalForRussianWord(wordText);
+    } else if (language === 'greek') {
+        // Greek word not in user's list - get forms directly
+        console.log(`Greek word "${wordText}" not found in lists, requesting forms for arbitrary word`);
+        await showWordDetailsModalForArbitraryWord(wordText);
+    } else {
+        // Unknown language
+        if (tg.showAlert) {
+            tg.showAlert('Could not detect word language');
+        }
+    }
+}
+
+async function showWordDetailsModalForRussianWord(russianWord) {
+    const modal = document.getElementById('word-details-modal');
+    const loading = document.getElementById('word-details-loading');
+    const content = document.getElementById('word-details-content');
+
+    // Show modal
+    modal.classList.remove('hidden');
+
+    // Set basic info
+    document.getElementById('word-details-title').innerHTML = '🔍 Translating <span style="font-size: 12px; font-weight: normal; color: #999;">(Russian word)</span>';
+    document.getElementById('word-details-greek').textContent = '(translating...)';
+    document.getElementById('word-details-russian').textContent = russianWord;
+    document.getElementById('word-details-type').textContent = 'translating...';
+
+    // Show loading
+    loading.classList.remove('hidden');
+    content.style.opacity = '0.5';
+
+    try {
+        // First, translate Russian to Greek
+        const translation = await translateRussianToGreek(russianWord);
+
+        if (!translation.greek) {
+            throw new Error('Translation failed');
+        }
+
+        // Update with Greek translation
+        document.getElementById('word-details-greek').textContent = translation.greek;
+        document.getElementById('word-details-type').textContent = translation.word_type || 'unknown';
+        document.getElementById('word-details-title').innerHTML = '🔍 Word Forms <span style="font-size: 12px; font-weight: normal; color: #999;">(translated from Russian)</span>';
+
+        // Now fetch word forms for the Greek word
+        const details = await getWordFormsByText(translation.greek, russianWord, translation.word_type);
+
+        // Hide loading
+        loading.classList.add('hidden');
+        content.style.opacity = '1';
+
+        // Display word forms
+        if (details.forms && details.forms.length > 0) {
+            const formsSection = document.getElementById('word-forms-section');
+            const formsList = document.getElementById('word-forms-list');
+
+            formsSection.classList.remove('hidden');
+
+            // Skip first item if it's just the word type info
+            const formsToDisplay = details.forms[0] && details.forms[0].label === 'Word type'
+                ? details.forms.slice(1)
+                : details.forms;
+
+            formsList.innerHTML = formsToDisplay.map(form => `
+                <div class="word-form-item">
+                    <div class="word-form-label">${form.label}:</div>
+                    <div class="word-form-value">
+                        <span class="word-form-greek">${form.greek}</span>
+                        <span class="word-form-russian">${form.russian}</span>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            document.getElementById('word-forms-section').classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error processing Russian word:', error);
+        loading.classList.add('hidden');
+        content.style.opacity = '1';
+        tg.showAlert('Failed to translate or load word forms');
+    }
+}
+
+async function showWordDetailsModalForArbitraryWord(greekWord) {
+    const modal = document.getElementById('word-details-modal');
+    const loading = document.getElementById('word-details-loading');
+    const content = document.getElementById('word-details-content');
+
+    // Show modal
+    modal.classList.remove('hidden');
+
+    // Set basic info (we don't know translation yet)
+    document.getElementById('word-details-title').innerHTML = '🔍 Word Forms <span style="font-size: 12px; font-weight: normal; color: #999;">(not in your list)</span>';
+    document.getElementById('word-details-greek').textContent = greekWord;
+    document.getElementById('word-details-russian').textContent = '(analyzing...)';
+    document.getElementById('word-details-type').textContent = 'analyzing...';
+
+    // Show loading
+    loading.classList.remove('hidden');
+    content.style.opacity = '0.5';
+
+    try {
+        // Fetch word forms from API (for arbitrary word)
+        const details = await getWordFormsByText(greekWord);
+
+        // Hide loading
+        loading.classList.add('hidden');
+        content.style.opacity = '1';
+
+        // Update info with results
+        let wordTypeDisplay = details.word_type || 'unknown';
+
+        // Check if first form contains word type info
+        if (details.forms && details.forms.length > 0 && details.forms[0].label === 'Word type') {
+            wordTypeDisplay = details.forms[0].russian;
+            document.getElementById('word-details-russian').textContent = '(analyzing from context)';
+        } else {
+            document.getElementById('word-details-russian').textContent = details.russian || '(not in your list)';
+        }
+
+        document.getElementById('word-details-type').textContent = wordTypeDisplay;
+
+        // Display word forms
+        if (details.forms && details.forms.length > 0) {
+            const formsSection = document.getElementById('word-forms-section');
+            const formsList = document.getElementById('word-forms-list');
+
+            formsSection.classList.remove('hidden');
+
+            // Skip first item if it's just the word type info
+            const formsToDisplay = details.forms[0].label === 'Word type'
+                ? details.forms.slice(1)
+                : details.forms;
+
+            formsList.innerHTML = formsToDisplay.map(form => `
+                <div class="word-form-item">
+                    <div class="word-form-label">${form.label}:</div>
+                    <div class="word-form-value">
+                        <span class="word-form-greek">${form.greek}</span>
+                        <span class="word-form-russian">${form.russian}</span>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            document.getElementById('word-forms-section').classList.add('hidden');
+            // Show message if no forms available
+            const formsSection = document.getElementById('word-forms-section');
+            formsSection.classList.remove('hidden');
+            document.getElementById('word-forms-list').innerHTML = `
+                <div class="empty-state-text" style="padding: 20px;">
+                    Could not determine word forms. This might not be a valid Greek word.
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading word forms for arbitrary word:', error);
+        loading.classList.add('hidden');
+        content.style.opacity = '1';
+        tg.showAlert('Failed to load word forms');
+    }
+}
+
+function hideWordDetailsModal() {
+    document.getElementById('word-details-modal').classList.add('hidden');
+    document.getElementById('word-forms-section').classList.add('hidden');
+}
+
 // ========== UI Rendering Functions ==========
 
 function renderLearningWords() {
@@ -312,7 +862,7 @@ function renderLearningWords() {
             : 0;
 
         return `
-            <div class="word-card">
+            <div class="word-card" data-word-id="${word.id}">
                 <div class="word-content">
                     <div class="word-greek">🇬🇷 ${word.greek}</div>
                     <div class="word-russian">🇷🇺 ${word.russian}</div>
@@ -329,6 +879,9 @@ function renderLearningWords() {
             </div>
         `;
     }).join('');
+
+    // Add long press handlers to word cards
+    attachLongPressHandlers();
 }
 
 function renderLearnedWords() {
@@ -350,7 +903,7 @@ function renderLearnedWords() {
             : 0;
 
         return `
-            <div class="word-card">
+            <div class="word-card" data-word-id="${word.id}">
                 <div class="word-content">
                     <div class="word-greek">🇬🇷 ${word.greek}</div>
                     <div class="word-russian">🇷🇺 ${word.russian}</div>
@@ -364,6 +917,9 @@ function renderLearnedWords() {
             </div>
         `;
     }).join('');
+
+    // Add long press handlers to word cards
+    attachLongPressHandlers();
 }
 
 function renderStats() {
@@ -457,7 +1013,10 @@ function renderMatchingExercise() {
         ? 'Match Greek words with Russian translations:'
         : 'Match Russian words with Greek translations:';
 
-    document.getElementById('exercise-question').innerHTML = questionText;
+    document.getElementById('exercise-question').innerHTML = `
+        ${questionText}
+        <div class="exercise-hint">💡 Long press any card to see word forms</div>
+    `;
     document.getElementById('exercise-sentence').style.display = 'none';
     document.getElementById('exercise-sentence-clickable').style.display = 'none';
     document.getElementById('exercise-translation').style.display = 'none';
@@ -504,6 +1063,9 @@ function renderMatchingExercise() {
     document.querySelectorAll('.matching-card').forEach(card => {
         card.addEventListener('click', () => handleMatchingCardClick(card));
     });
+
+    // Add long press handlers to matching cards
+    attachLongPressToMatchingCards();
 
     showExerciseScreen();
 }
@@ -638,6 +1200,7 @@ function renderExercise() {
 
     document.getElementById('exercise-question').innerHTML = `
         ${questionText}<br><strong>"${targetWord}"</strong>
+        <div class="exercise-hint">💡 Long press any word to see its forms (even if not in your list)</div>
     `;
 
     // Hide the non-interactive sentence, show clickable version
@@ -660,13 +1223,19 @@ function renderExercise() {
         // Clean up punctuation for comparison but keep it for display
         // Remove common punctuation marks (must match backend normalization)
         const cleanWord = word.replace(/[.,!?;:»«"""'()—–\-\[\]]/g, '');
-        return `<span class="sentence-word" data-word="${cleanWord}" data-index="${index}">${word}</span>`;
+        // Add word_id to the target word for long press
+        const isTargetWord = cleanWord.toLowerCase() === ex.correct_answer.toLowerCase();
+        const wordIdAttr = isTargetWord ? `data-word-id="${ex.word_id}"` : '';
+        return `<span class="sentence-word" data-word="${cleanWord}" data-index="${index}" ${wordIdAttr}>${word}</span>`;
     }).join('');
 
     // Add click handlers to words
     document.querySelectorAll('.sentence-word').forEach(wordEl => {
         wordEl.addEventListener('click', () => handleWordClick(wordEl));
     });
+
+    // Add long press handlers to words
+    attachLongPressToSentenceWords();
 
     document.getElementById('exercise-translation').textContent = `Translation: ${ex.sentence_translation}`;
 
@@ -859,6 +1428,28 @@ function hideExerciseTypeModal() {
     document.getElementById('exercise-type-modal').classList.add('hidden');
 }
 
+function showAddCustomWordModal() {
+    const modal = document.getElementById('add-custom-word-modal');
+    const input = document.getElementById('custom-word-input');
+    const errorEl = document.getElementById('add-word-error');
+    const loadingEl = document.getElementById('add-word-loading');
+
+    // Reset modal state
+    input.value = '';
+    errorEl.classList.add('hidden');
+    loadingEl.classList.add('hidden');
+
+    // Show modal
+    modal.classList.remove('hidden');
+
+    // Focus input
+    setTimeout(() => input.focus(), 100);
+}
+
+function hideAddCustomWordModal() {
+    document.getElementById('add-custom-word-modal').classList.add('hidden');
+}
+
 // ========== Event Listeners ==========
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -890,6 +1481,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('fetch-cancel-btn').addEventListener('click', hideFetchWordsModal);
 
+    // Add custom word button - use event delegation
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'add-custom-word-btn' || e.target.closest('#add-custom-word-btn')) {
+            console.log('Add custom word button clicked!');
+            e.preventDefault();
+            e.stopPropagation();
+            showAddCustomWordModal();
+        }
+    });
+
+    // Add custom word modal
+    document.getElementById('add-custom-word-confirm-btn').addEventListener('click', async () => {
+        const wordText = document.getElementById('custom-word-input').value.trim();
+        if (wordText) {
+            await addCustomWord(wordText);
+        }
+    });
+
+    document.getElementById('add-custom-word-cancel-btn').addEventListener('click', hideAddCustomWordModal);
+
+    // Allow Enter key to submit
+    document.getElementById('custom-word-input').addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            const wordText = e.target.value.trim();
+            if (wordText) {
+                await addCustomWord(wordText);
+            }
+        }
+    });
+
     // Close modals when clicking outside
     document.getElementById('fetch-words-modal').addEventListener('click', (e) => {
         if (e.target.id === 'fetch-words-modal') {
@@ -900,6 +1521,20 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('exercise-type-modal').addEventListener('click', (e) => {
         if (e.target.id === 'exercise-type-modal') {
             hideExerciseTypeModal();
+        }
+    });
+
+    document.getElementById('word-details-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'word-details-modal') {
+            hideWordDetailsModal();
+        }
+    });
+
+    document.getElementById('word-details-close').addEventListener('click', hideWordDetailsModal);
+
+    document.getElementById('add-custom-word-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'add-custom-word-modal') {
+            hideAddCustomWordModal();
         }
     });
 

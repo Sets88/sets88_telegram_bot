@@ -9,6 +9,7 @@ import uuid
 import asyncio
 import random
 import re
+import hashlib
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -177,6 +178,16 @@ class MatchingCardsExercise:
         }
 
 
+def get_word_hash(greek_word: str) -> str:
+    """
+    Generate a hash for a Greek word to use as cache filename
+    Normalizes the word (lowercase, strip) before hashing
+    """
+    normalized = greek_word.lower().strip()
+    hash_obj = hashlib.md5(normalized.encode('utf-8'))
+    return hash_obj.hexdigest()
+
+
 class GreekLearningManager:
     """
     Manages Greek word learning for a user
@@ -208,6 +219,14 @@ class GreekLearningManager:
         filename = os.path.basename(f'{self.user_id}.json')
         return os.path.abspath(
             os.path.join(os.path.dirname(__file__), '..', 'greek_stats', filename)
+        )
+
+    def _get_word_forms_cache_path(self, greek_word: str) -> str:
+        """Get path to cached word forms file based on word hash"""
+        word_hash = get_word_hash(greek_word)
+        filename = os.path.basename(f'{word_hash}.json')
+        return os.path.abspath(
+            os.path.join(os.path.dirname(__file__), '..', 'greek_word_forms', filename)
         )
 
     # ========== JSON Load/Save Operations ==========
@@ -420,6 +439,46 @@ class GreekLearningManager:
         learned_words = await self.load_learned_words()
         return [w.greek for w in learned_words]
 
+    async def load_word_forms_cache(self, greek_word: str) -> Optional[List[Dict[str, str]]]:
+        """Load cached word forms from file based on word hash"""
+        path = self._get_word_forms_cache_path(greek_word)
+
+        if not os.path.exists(path):
+            return None
+
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                word_hash = get_word_hash(greek_word)
+                logger.info(f"Loaded word forms from cache for '{greek_word}' (hash: {word_hash})")
+                return data.get('forms', [])
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            logger.error(f"Error loading word forms cache for '{greek_word}': {exc}")
+            return None
+
+    async def save_word_forms_cache(self, greek: str, russian: str, word_type: str, forms: List[Dict[str, str]]) -> None:
+        """Save word forms to cache file based on word hash"""
+        async with self._lock:
+            path = self._get_word_forms_cache_path(greek)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
+            word_hash = get_word_hash(greek)
+            data = {
+                "word_hash": word_hash,
+                "greek": greek,
+                "russian": russian,
+                "word_type": word_type,
+                "forms": forms,
+                "cached_at": datetime.utcnow().isoformat() + "Z"
+            }
+
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Saved word forms to cache for '{greek}' (hash: {word_hash})")
+            except Exception as exc:
+                logger.error(f"Error saving word forms cache for '{greek}': {exc}")
+
     def _filter_words_by_types(self, words: List[Word], word_types: Optional[List[str]]) -> List[Word]:
         """
         Filter words by word types.
@@ -492,6 +551,7 @@ Requirements:
 - Only A2 level words (common, practical everyday vocabulary)
 - Accurate Russian translations
 - No duplicates from the excluded list{exclusion_text}
+- Modern Greek words (avoid archaic/ancient terms)
 
 Format your response as a valid JSON object with this structure:
 {{
@@ -594,11 +654,52 @@ Respond ONLY with the JSON object, no additional text."""
         logger.info(f"Generated matching cards exercise with {len(pairs)} pairs for user {self.user_id}")
         return exercise
 
-    async def generate_exercise(self, word: Word, direction: ExerciseDirection) -> Exercise:
+    async def generate_exercise(
+        self,
+        word: Word,
+        direction: ExerciseDirection,
+        verb_preferences: Optional[Dict[str, List[str]]] = None
+    ) -> Exercise:
         """
         Generate exercise sentence using OpenAI via OpenRouter
         Direction: Greek→Russian or Russian→Greek
+        verb_preferences: Optional dict with 'tenses' and 'persons' lists
         """
+        # Build verb form instructions if applicable
+        verb_instructions = ""
+        if word.word_type.lower() == 'verb' and verb_preferences:
+            tenses = verb_preferences.get('tenses', [])
+            persons = verb_preferences.get('persons', [])
+
+            if tenses or persons:
+                verb_instructions = "\n\nVERB FORM REQUIREMENTS:\n"
+
+                if tenses:
+                    tense_map = {
+                        'present': 'present tense (ενεστώτας)',
+                        'past': 'past tense/aorist (αόριστος)',
+                        'future': 'future tense (μέλλοντας)',
+                        'other': 'other tenses or moods (e.g., perfect, subjunctive, imperative)'
+                    }
+                    tense_descriptions = [tense_map.get(t, t) for t in tenses]
+                    verb_instructions += f"- Use the verb in ONE of these tenses: {' OR '.join(tense_descriptions)}\n"
+
+                if persons:
+                    person_map = {
+                        '1st': '1st person (εγώ, εμείς)',
+                        '2nd': '2nd person (εσύ, εσείς)',
+                        '3rd': '3rd person (αυτός/αυτή/αυτό, αυτοί/αυτές)',
+                        'mixed': 'any person (you choose)'
+                    }
+
+                    if 'mixed' in persons or len(persons) > 1:
+                        person_descriptions = [person_map.get(p, p) for p in persons]
+                        verb_instructions += f"- Use ONE of these grammatical persons: {' OR '.join(person_descriptions)}\n"
+                    else:
+                        # Only one specific person requested
+                        person_descriptions = [person_map.get(p, p) for p in persons]
+                        verb_instructions += f"- Use this grammatical person: {person_descriptions[0]}\n"
+
         if direction == ExerciseDirection.GREEK_TO_RUSSIAN:
             # Generate Greek sentence, ask to find Russian translation
             prompt = f"""Generate a Greek sentence at A2 level using the word "{word.greek}" (meaning in Russian: {word.russian}).
@@ -609,7 +710,8 @@ Requirements:
 3. Mark ONLY the target word "{word.greek}"(in ANY form of the word) with double square brackets: [[{word.greek}]]
 4. The marked word can be in any form(plural, case, tense, third person) or a common inflected form
 5. Provide Russian translation of the entire sentence
-6. Generate correct translation of the marked word into Russian
+6. Generate correct translation of the marked word into Russian{verb_instructions}
+7. Modern Greek (avoid archaic/ancient terms)
 
 Format as a valid JSON object:
 {{
@@ -630,7 +732,8 @@ Requirements:
 4. The marked word can be in any form(plural, case, tense, third person) or a common inflected form
 5. Provide Greek translation of the entire sentence
 6. In the Greek translation, mark the corresponding Greek word with brackets: [[{word.greek}]]
-7. Generate correct Greek translation of the marked word
+7. Generate correct Greek translation of the marked word{verb_instructions}
+8. Modern Greek (avoid archaic/ancient terms)
 
 Format as a valid JSON object:
 {{
@@ -706,3 +809,309 @@ Respond ONLY with the JSON object, no additional text."""
         except Exception as exc:
             logger.error(f"Error generating exercise: {exc}")
             raise
+
+    async def generate_word_forms(self, greek_word: str, russian_word: str, word_type: str) -> List[Dict[str, str]]:
+        """
+        Generate various forms of a Greek word with Russian translations using OpenAI via OpenRouter
+        Returns list of forms with labels
+        Uses file cache (based on word hash) to avoid repeated API calls
+        """
+        # Check cache first (based on word hash, not ID)
+        cached_forms = await self.load_word_forms_cache(greek_word)
+        if cached_forms is not None:
+            logger.info(f"Using cached word forms for '{greek_word}'")
+            return cached_forms
+        # If word type is unknown, ask OpenAI to determine it and provide forms
+        if word_type.lower() == 'unknown' or not word_type:
+            prompt = f"""Analyze the Greek word "{greek_word}" and provide its grammatical forms with Russian translations.
+
+First, determine what type of word it is (noun, verb, adjective, etc.).
+Then, generate all relevant forms based on the word type:
+- For verbs: present, past/aorist, future tenses; 1st, 2nd, 3rd person; singular and plural
+- For nouns: nominative, genitive, accusative cases; singular and plural
+- For adjectives: masculine, feminine, neuter; singular and plural
+- Modern Greek words (avoid archaic/ancient terms)
+Format as a valid JSON array:
+[
+  {{"label": "Word type", "greek": "{greek_word}", "russian": "type in Russian (существительное/глагол/прилагательное)"}},
+  {{"label": "Form description", "greek": "form", "russian": "translation"}},
+  ...
+]
+
+Respond ONLY with the JSON array, no additional text."""
+
+        # Build prompt based on word type
+        elif word_type.lower() == 'verb':
+            prompt = f"""Generate all common forms of the Greek verb "{greek_word}" (Russian: {russian_word}) with Russian translations.
+
+Include the following forms:
+1. Present tense: 1st, 2nd, 3rd person singular and plural
+2. Past/Aorist tense: 1st, 2nd, 3rd person singular and plural
+3. Future tense: 1st, 2nd, 3rd person singular and plural
+4. Imperative mood (if applicable)
+5. Participles (if applicable)
+6. Modern Greek forms (avoid archaic/ancient terms)
+
+Format as a valid JSON array:
+[
+  {{"label": "Present 1st person singular (εγώ)", "greek": "form", "russian": "translation"}},
+  {{"label": "Present 2nd person singular (εσύ)", "greek": "form", "russian": "translation"}},
+  ...
+]
+
+Respond ONLY with the JSON array, no additional text."""
+
+        elif word_type.lower() == 'noun':
+            prompt = f"""Generate all forms of the Greek noun "{greek_word}" (Russian: {russian_word}) with Russian translations.
+
+Include the following forms:
+1. Nominative singular and plural
+2. Genitive singular and plural
+3. Accusative singular and plural
+4. Vocative (if different)
+5. Modern Greek forms (avoid archaic/ancient terms)
+
+Format as a valid JSON array:
+[
+  {{"label": "Nominative singular", "greek": "form", "russian": "translation"}},
+  {{"label": "Nominative plural", "greek": "form", "russian": "translation"}},
+  ...
+]
+
+Respond ONLY with the JSON array, no additional text."""
+
+        elif word_type.lower() == 'adjective':
+            prompt = f"""Generate all forms of the Greek adjective "{greek_word}" (Russian: {russian_word}) with Russian translations.
+
+Include the following forms:
+1. Masculine, feminine, neuter forms
+2. Singular and plural for each gender
+3. Different cases if applicable (nominative, genitive, accusative)
+4. Modern Greek forms (avoid archaic/ancient terms)
+
+Format as a valid JSON array:
+[
+  {{"label": "Masculine singular", "greek": "form", "russian": "translation"}},
+  {{"label": "Feminine singular", "greek": "form", "russian": "translation"}},
+  ...
+]
+
+Respond ONLY with the JSON array, no additional text."""
+
+        else:
+            # For other word types, return basic info
+            return [{
+                "label": "Base form",
+                "greek": greek_word,
+                "russian": russian_word
+            }]
+
+        try:
+            # Make request to OpenRouter
+            response = await openrouter_instance.client.responses.create(
+                model="openai/gpt-5-mini",
+                input=[
+                    {"role": "user", "content": prompt}
+                ],
+                reasoning={
+                    "effort": "minimal",
+                }
+            )
+
+            content = response.output_text
+            logger.info(f"OpenRouter response for word forms: {content}")
+
+            # Parse JSON
+            forms = json.loads(content)
+
+            if not isinstance(forms, list):
+                logger.error(f"Expected list, got: {type(forms)}")
+                return []
+
+            logger.info(f"Generated {len(forms)} forms for word '{greek_word}'")
+
+            # Save to cache for future use (indexed by word hash)
+            await self.save_word_forms_cache(greek_word, russian_word, word_type, forms)
+
+            return forms
+
+        except json.JSONDecodeError as exc:
+            logger.error(f"Failed to parse word forms JSON: {exc}")
+            logger.error(f"Response was: {content}")
+            return []
+        except Exception as exc:
+            logger.error(f"Error generating word forms: {exc}")
+            return []
+
+    async def translate_russian_to_greek(self, russian_word: str) -> Dict[str, str]:
+        """
+        Translate Russian word to Greek using OpenAI
+        Returns dict with 'greek', 'russian', 'word_type'
+        """
+        prompt = f"""Translate the Russian word "{russian_word}" to Greek.
+
+Provide:
+1. The Greek translation (base form)
+2. The word type (noun/verb/adjective/etc.)
+3. Modern Greek form (avoid archaic/ancient terms)
+
+Format as a valid JSON object:
+{{
+  "greek": "greek_word",
+  "russian": "{russian_word}",
+  "word_type": "noun/verb/adjective/etc"
+}}
+
+Respond ONLY with the JSON object, no additional text."""
+
+        try:
+            # Make request to OpenRouter
+            response = await openrouter_instance.client.responses.create(
+                model="openai/gpt-5-mini",
+                input=[
+                    {"role": "user", "content": prompt}
+                ],
+                reasoning={
+                    "effort": "minimal",
+                }
+            )
+
+            content = response.output_text
+            logger.info(f"OpenRouter response for translation: {content}")
+
+            # Parse JSON
+            translation = json.loads(content)
+
+            logger.info(f"Translated '{russian_word}' to '{translation.get('greek')}'")
+            return translation
+
+        except json.JSONDecodeError as exc:
+            logger.error(f"Failed to parse translation JSON: {exc}")
+            logger.error(f"Response was: {content}")
+            return {}
+        except Exception as exc:
+            logger.error(f"Error translating Russian to Greek: {exc}")
+            return {}
+
+    async def add_custom_word(self, word_text: str, language: str = 'auto') -> Dict[str, Any]:
+        """
+        Add a custom word entered by user (in Russian or Greek)
+
+        Args:
+            word_text: The word to add (in Russian or Greek)
+            language: 'russian', 'greek', or 'auto' to detect automatically
+
+        Returns:
+            Dict with 'success' and 'word' (Word object as dict) or 'error'
+        """
+        try:
+            word_text = word_text.strip()
+
+            if not word_text:
+                return {'success': False, 'error': 'Word cannot be empty'}
+
+            # Auto-detect language if needed
+            if language == 'auto':
+                # Simple language detection based on character sets
+                greek_chars = any('\u0370' <= c <= '\u03FF' or '\u1F00' <= c <= '\u1FFF' for c in word_text)
+                russian_chars = any('\u0400' <= c <= '\u04FF' for c in word_text)
+
+                if greek_chars and not russian_chars:
+                    language = 'greek'
+                elif russian_chars and not greek_chars:
+                    language = 'russian'
+                else:
+                    return {'success': False, 'error': 'Could not detect language. Please enter word in Greek or Russian.'}
+
+            if language == 'russian':
+                # Translate Russian to Greek
+                translation = await self.translate_russian_to_greek(word_text)
+
+                if not translation or not translation.get('greek'):
+                    return {'success': False, 'error': 'Failed to translate word to Greek'}
+
+                greek_word = translation['greek']
+                russian_word = word_text
+                word_type = translation.get('word_type', 'unknown')
+
+            elif language == 'greek':
+                # Get Russian translation and word type from OpenAI
+                prompt = f"""Translate the Greek word "{word_text}" to Russian and determine its word type.
+
+Provide:
+1. The Russian translation
+2. The word type (noun/verb/adjective/etc.)
+3. Modern Greek form (avoid archaic/ancient terms)
+
+Format as a valid JSON object:
+{{
+  "greek": "{word_text}",
+  "russian": "russian_translation",
+  "word_type": "noun/verb/adjective/etc"
+}}
+
+Respond ONLY with the JSON object, no additional text."""
+
+                response = await openrouter_instance.client.responses.create(
+                    model="openai/gpt-5-mini",
+                    input=[
+                        {"role": "user", "content": prompt}
+                    ],
+                    reasoning={
+                        "effort": "minimal",
+                    }
+                )
+
+                content = response.output_text
+                logger.info(f"OpenRouter response for Greek word info: {content}")
+
+                translation = json.loads(content)
+
+                if not translation or not translation.get('russian'):
+                    return {'success': False, 'error': 'Failed to translate Greek word to Russian'}
+
+                greek_word = word_text
+                russian_word = translation['russian']
+                word_type = translation.get('word_type', 'unknown')
+
+            else:
+                return {'success': False, 'error': 'Invalid language parameter'}
+
+            # Check if word already exists
+            current_words = await self.load_words()
+            learned_words = await self.load_learned_words()
+
+            # Check in current learning words
+            for w in current_words:
+                if w.greek.lower() == greek_word.lower():
+                    return {'success': False, 'error': f'Word "{greek_word}" is already in your learning list'}
+
+            # Check in learned words
+            for w in learned_words:
+                if w.greek.lower() == greek_word.lower():
+                    return {'success': False, 'error': f'Word "{greek_word}" is already learned'}
+
+            # Create new word
+            new_word = Word.create(
+                greek=greek_word,
+                russian=russian_word,
+                word_type=word_type,
+                level="A2"
+            )
+
+            # Add to learning list
+            await self.add_words([new_word])
+
+            logger.info(f"Added custom word for user {self.user_id}: {greek_word} ({russian_word})")
+
+            return {
+                'success': True,
+                'word': new_word.to_dict()
+            }
+
+        except json.JSONDecodeError as exc:
+            logger.error(f"Failed to parse OpenAI JSON response: {exc}")
+            return {'success': False, 'error': 'Failed to process word with AI'}
+        except Exception as exc:
+            logger.error(f"Error adding custom word: {exc}")
+            return {'success': False, 'error': f'Internal error: {str(exc)}'}

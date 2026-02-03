@@ -28,7 +28,10 @@
                 <div id="learning-tab" class="tab-panel active">
                     <div class="header">
                         <h2>Your Learning Words</h2>
-                        <button id="fetch-words-btn" class="btn btn-primary">+ Fetch New Words</button>
+                        <div class="header-buttons">
+                            <button id="add-custom-word-btn" class="btn btn-primary">+ Add Word</button>
+                            <button id="fetch-words-btn" class="btn btn-primary">+ Fetch New Words</button>
+                        </div>
                     </div>
 
                     <button id="practice-btn" class="btn btn-success btn-large">Practice</button>
@@ -74,8 +77,8 @@
 
                 <div id="exercise-feedback" class="feedback hidden"></div>
 
-                <button id="next-exercise-btn" class="btn btn-primary hidden">Next</button>
                 <button id="mark-learned-btn" class="btn btn-success hidden">Mark as Learned</button>
+                <button id="next-exercise-btn" class="btn btn-primary hidden">Next</button>
             </div>
         </div>
 
@@ -86,8 +89,8 @@
                 <p>How many words would you like to fetch?</p>
                 <input type="number" id="fetch-count-input" min="1" max="20" value="5" class="input">
                 <div class="modal-buttons">
-                    <button id="fetch-confirm-btn" class="btn btn-primary">Fetch</button>
                     <button id="fetch-cancel-btn" class="btn btn-secondary">Cancel</button>
+                    <button id="fetch-confirm-btn" class="btn btn-primary">Fetch</button>
                 </div>
             </div>
         </div>
@@ -108,6 +111,49 @@
                     </select>
                 </div>
 
+                <!-- Verb Form Selection Section -->
+                <div id="verb-form-section" class="verb-form-section hidden">
+                    <h4 class="verb-form-heading">Verb Forms</h4>
+
+                    <!-- Tense Selection -->
+                    <div class="form-group">
+                        <label class="form-label">Tenses:</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="tense" value="present" checked> Present
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="tense" value="past"> Past/Aorist
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="tense" value="future"> Future
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="tense" value="other"> Other tenses/moods
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Person/Number Selection -->
+                    <div class="form-group">
+                        <label class="form-label">Person/Number:</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="person" value="1st" checked> 1st person
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="person" value="2nd"> 2nd person
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="person" value="3rd"> 3rd person
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="person" value="mixed"> Mixed (AI chooses)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="exercise-type-buttons">
                     <button id="sentence-exercise-btn" class="btn btn-primary btn-exercise-type">
                         📝 Sentence Context
@@ -119,6 +165,61 @@
                     </button>
                 </div>
                 <button id="exercise-type-cancel-btn" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Word Details Modal -->
+        <div id="word-details-modal" class="modal hidden">
+            <div class="modal-content word-details-content">
+                <div class="word-details-header">
+                    <h3 id="word-details-title"></h3>
+                    <button id="word-details-close" class="btn-close">&times;</button>
+                </div>
+
+                <div id="word-details-loading" class="word-details-loading hidden">
+                    <div class="loader"></div>
+                    <p>Loading word forms...</p>
+                </div>
+
+                <div id="word-details-content">
+                    <div class="word-detail-section">
+                        <div class="word-detail-label">Greek:</div>
+                        <div class="word-detail-value" id="word-details-greek"></div>
+                    </div>
+
+                    <div class="word-detail-section">
+                        <div class="word-detail-label">Russian:</div>
+                        <div class="word-detail-value" id="word-details-russian"></div>
+                    </div>
+
+                    <div class="word-detail-section">
+                        <div class="word-detail-label">Type:</div>
+                        <div class="word-detail-value" id="word-details-type"></div>
+                    </div>
+
+                    <div id="word-forms-section" class="word-detail-section hidden">
+                        <div class="word-detail-label">Word Forms:</div>
+                        <div id="word-forms-list" class="word-forms-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Custom Word Modal -->
+        <div id="add-custom-word-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Add Custom Word</h3>
+                <p>Enter a word in Russian or Greek:</p>
+                <input type="text" id="custom-word-input" placeholder="Type word here..." class="input">
+                <div id="add-word-loading" class="word-details-loading hidden">
+                    <div class="loader"></div>
+                    <p>Processing word...</p>
+                </div>
+                <div id="add-word-error" class="error-message hidden"></div>
+                <div class="modal-buttons">
+                    <button id="add-custom-word-cancel-btn" class="btn btn-secondary">Cancel</button>
+                    <button id="add-custom-word-confirm-btn" class="btn btn-primary">Add Word</button>
+                </div>
             </div>
         </div>
     </div>

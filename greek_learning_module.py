@@ -157,6 +157,7 @@ class GreekWebApp:
         self.app.router.add_get('/greek/api/words', self.get_words)
         self.app.router.add_get('/greek/api/learned', self.get_learned)
         self.app.router.add_post('/greek/api/fetch-words', self.fetch_words)
+        self.app.router.add_post('/greek/api/add-word', self.add_custom_word)
         self.app.router.add_get('/greek/api/exercise', self.get_exercise)
         self.app.router.add_get('/greek/api/exercise/matching', self.get_matching_exercise)
         self.app.router.add_post('/greek/api/validate', self.validate_answer)
@@ -165,6 +166,9 @@ class GreekWebApp:
         self.app.router.add_post('/greek/api/move-to-learning', self.move_to_learning)
         self.app.router.add_delete('/greek/api/words/{word_id}', self.delete_word)
         self.app.router.add_get('/greek/api/stats', self.get_stats)
+        self.app.router.add_get('/greek/api/word-details/{word_id}', self.get_word_details)
+        self.app.router.add_post('/greek/api/word-forms', self.get_word_forms_by_text)
+        self.app.router.add_post('/greek/api/translate-russian', self.translate_russian_to_greek)
 
         logger.info("Greek Learning API routes configured")
 
@@ -287,6 +291,18 @@ class GreekWebApp:
             word_type = request.rel_url.query.get('word_type', '').strip()
             word_types = [word_type] if word_type else None
 
+            # Get verb form preferences (optional)
+            verb_tenses_str = request.rel_url.query.get('verb_tenses', '')
+            verb_persons_str = request.rel_url.query.get('verb_persons', '')
+
+            verb_preferences = None
+            if word_type == 'verb' and (verb_tenses_str or verb_persons_str):
+                verb_preferences = {
+                    'tenses': verb_tenses_str.split(',') if verb_tenses_str else [],
+                    'persons': verb_persons_str.split(',') if verb_persons_str else []
+                }
+                logger.info(f"Verb preferences: {verb_preferences}")
+
             manager = GreekLearningManager(user['id'])
 
             # Select word
@@ -313,7 +329,7 @@ class GreekWebApp:
                     return web.json_response({'error': 'Invalid direction'}, status=400)
 
             # Generate exercise
-            exercise = await manager.generate_exercise(word, direction)
+            exercise = await manager.generate_exercise(word, direction, verb_preferences=verb_preferences)
 
             return web.json_response({
                 'word_id': exercise.word_id,
@@ -549,6 +565,162 @@ class GreekWebApp:
 
         except Exception as exc:
             logger.exception(f"Error validating matching answers: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def get_word_details(self, request: web.Request) -> web.Response:
+        """GET /api/greek/word-details/{word_id} - Get detailed word information including forms"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            word_id = request.match_info['word_id']
+
+            manager = GreekLearningManager(user['id'])
+
+            # Try to find word in learning list
+            word = await manager.get_word_by_id(word_id)
+
+            # If not found, try learned list
+            if not word:
+                learned_words = await manager.load_learned_words()
+                learned_word = next((w for w in learned_words if w.id == word_id), None)
+                if not learned_word:
+                    return web.json_response({'error': 'Word not found'}, status=404)
+
+                # Convert learned word to word format for processing
+                word_data = {
+                    'id': learned_word.id,
+                    'greek': learned_word.greek,
+                    'russian': learned_word.russian,
+                    'word_type': learned_word.word_type,
+                    'level': learned_word.level
+                }
+            else:
+                word_data = {
+                    'id': word.id,
+                    'greek': word.greek,
+                    'russian': word.russian,
+                    'word_type': word.word_type,
+                    'level': word.level
+                }
+
+            # Generate word forms using OpenAI (with caching by word hash)
+            forms = await manager.generate_word_forms(
+                greek_word=word_data['greek'],
+                russian_word=word_data['russian'],
+                word_type=word_data['word_type']
+            )
+
+            return web.json_response({
+                'id': word_data['id'],
+                'greek': word_data['greek'],
+                'russian': word_data['russian'],
+                'word_type': word_data['word_type'],
+                'level': word_data['level'],
+                'forms': forms
+            })
+
+        except Exception as exc:
+            logger.exception(f"Error getting word details: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def get_word_forms_by_text(self, request: web.Request) -> web.Response:
+        """POST /api/greek/word-forms - Get word forms for any Greek word (by text, not ID)"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            data = await request.json()
+            greek_word = data.get('greek')
+            russian_word = data.get('russian', '')
+            word_type = data.get('word_type', 'unknown')
+
+            if not greek_word:
+                return web.json_response({'error': 'Missing greek word'}, status=400)
+
+            manager = GreekLearningManager(user['id'])
+
+            # Generate word forms using hash-based caching
+            # This will work for any word, even if it's not in user's list
+            forms = await manager.generate_word_forms(
+                greek_word=greek_word,
+                russian_word=russian_word,
+                word_type=word_type
+            )
+
+            return web.json_response({
+                'greek': greek_word,
+                'russian': russian_word,
+                'word_type': word_type,
+                'forms': forms
+            })
+
+        except Exception as exc:
+            logger.exception(f"Error getting word forms by text: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def translate_russian_to_greek(self, request: web.Request) -> web.Response:
+        """POST /api/greek/translate-russian - Translate Russian word to Greek"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            data = await request.json()
+            russian_word = data.get('russian')
+
+            if not russian_word:
+                return web.json_response({'error': 'Missing russian word'}, status=400)
+
+            manager = GreekLearningManager(user['id'])
+
+            # Translate Russian to Greek using OpenAI
+            translation = await manager.translate_russian_to_greek(russian_word)
+
+            if not translation:
+                return web.json_response({'error': 'Translation failed'}, status=500)
+
+            return web.json_response(translation)
+
+        except Exception as exc:
+            logger.exception(f"Error translating Russian to Greek: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def add_custom_word(self, request: web.Request) -> web.Response:
+        """POST /api/greek/add-word - Add custom word from user input"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            data = await request.json()
+            word_text = data.get('word', '').strip()
+            language = data.get('language', 'auto')
+
+            if not word_text:
+                return web.json_response({'error': 'Word text is required'}, status=400)
+
+            manager = GreekLearningManager(user['id'])
+
+            # Add custom word (will auto-detect language or translate as needed)
+            result = await manager.add_custom_word(word_text, language)
+
+            if result.get('success'):
+                return web.json_response({
+                    'success': True,
+                    'word': result['word'],
+                    'message': 'Word added successfully'
+                })
+            else:
+                return web.json_response({
+                    'success': False,
+                    'error': result.get('error', 'Failed to add word')
+                }, status=400)
+
+        except Exception as exc:
+            logger.exception(f"Error adding custom word: {exc}")
             return web.json_response({'error': 'Internal server error'}, status=500)
 
 
