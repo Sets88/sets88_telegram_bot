@@ -14,9 +14,13 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from enum import Enum
+from random import choice
 
 from logger import logger
 from lib.llm import openrouter_instance
+import replicate_module
+from replicate.helpers import FileOutput
+import aiohttp
 
 
 class ExerciseDirection(Enum):
@@ -43,6 +47,11 @@ class Word:
     correct_count: int = 0
     word_type: str = ""  # e.g., noun, verb, adjective
     last_practiced: Optional[str] = None
+    lists: List[str] = None  # List of list IDs this word belongs to
+
+    def __post_init__(self):
+        if self.lists is None:
+            self.lists = []
 
     @staticmethod
     def create(greek: str, russian: str, word_type: str, level: str = "A2") -> "Word":
@@ -77,6 +86,11 @@ class LearnedWord:
     total_exercises: int
     total_correct: int
     word_type: str = ""
+    lists: List[str] = None  # List of list IDs this word belongs to
+
+    def __post_init__(self):
+        if self.lists is None:
+            self.lists = []
 
     @staticmethod
     def from_word(word: Word) -> "LearnedWord":
@@ -89,7 +103,8 @@ class LearnedWord:
             learned_at=datetime.utcnow().isoformat() + "Z",
             level=word.level,
             total_exercises=word.exercise_count,
-            total_correct=word.correct_count
+            total_correct=word.correct_count,
+            lists=word.lists.copy() if word.lists else []
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -188,6 +203,48 @@ def get_word_hash(greek_word: str) -> str:
     return hash_obj.hexdigest()
 
 
+# Simple in-memory cache for sentence audio URLs with size limit
+class SentenceAudioCache:
+    """LRU-like cache for sentence audio URLs"""
+    def __init__(self, maxsize: int = 100):
+        self.maxsize = maxsize
+        self.cache = {}  # {text: url}
+        self.access_order = []  # Track access order for LRU
+
+    def get(self, text: str) -> Optional[str]:
+        """Get cached URL for text"""
+        if text in self.cache:
+            # Update access order (move to end = most recently used)
+            if text in self.access_order:
+                self.access_order.remove(text)
+            self.access_order.append(text)
+            return self.cache[text]
+        return None
+
+    def set(self, text: str, url: str) -> None:
+        """Cache URL for text"""
+        # If already exists, update access order
+        if text in self.cache:
+            if text in self.access_order:
+                self.access_order.remove(text)
+        else:
+            # If cache is full, remove least recently used
+            if len(self.cache) >= self.maxsize:
+                if self.access_order:
+                    lru_text = self.access_order.pop(0)
+                    self.cache.pop(lru_text, None)
+
+        # Add/update cache
+        self.cache[text] = url
+        self.access_order.append(text)
+
+
+# Global cache instance
+_sentence_audio_cache = SentenceAudioCache(maxsize=100)
+
+
+
+
 class GreekLearningManager:
     """
     Manages Greek word learning for a user
@@ -228,6 +285,43 @@ class GreekLearningManager:
         return os.path.abspath(
             os.path.join(os.path.dirname(__file__), '..', 'greek_word_forms', filename)
         )
+
+    def _get_audio_cache_dir(self) -> str:
+        """Get path to audio cache directory"""
+        return os.path.abspath(
+            os.path.join(os.path.dirname(__file__), '..', 'greek_audio_cache')
+        )
+
+    def _get_audio_cache_path(self, text: str, language: str) -> str:
+        """Get path to cached audio file based on text hash"""
+        # Create hash from text + language
+        text_hash = hashlib.md5(f"{text}:{language}".encode('utf-8')).hexdigest()
+        filename = os.path.basename(f'{text_hash}.mp3')
+        return os.path.join(self._get_audio_cache_dir(), filename)
+
+    async def _download_and_cache_audio(self, audio_url: str, cache_path: str) -> bool:
+        """Download audio from URL and save to cache path"""
+        try:
+            # Create cache directory if it doesn't exist
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+
+            # Download audio file
+            async with aiohttp.ClientSession() as session:
+                async with session.get(audio_url) as response:
+                    if response.status != 200:
+                        logger.error(f"Failed to download audio: HTTP {response.status}")
+                        return False
+
+                    # Save to file
+                    with open(cache_path, 'wb') as f:
+                        f.write(await response.read())
+
+            logger.info(f"Cached audio file: {cache_path}")
+            return True
+
+        except Exception as exc:
+            logger.error(f"Error downloading and caching audio: {exc}")
+            return False
 
     # ========== JSON Load/Save Operations ==========
 
@@ -349,6 +443,32 @@ class GreekLearningManager:
             await self.save_words(words)
             return True
         return False
+
+    async def update_word(self, word_id: str, updates: Dict[str, Any]) -> Optional[Word]:
+        """Update a word in learning or learned list"""
+        # Try learning words first
+        words = await self.load_words()
+        for word in words:
+            if word.id == word_id:
+                # Update fields
+                for key, value in updates.items():
+                    if hasattr(word, key):
+                        setattr(word, key, value)
+                await self.save_words(words)
+                return word
+
+        # Try learned words
+        learned_words = await self.load_learned_words()
+        for word in learned_words:
+            if word.id == word_id:
+                # Update fields
+                for key, value in updates.items():
+                    if hasattr(word, key):
+                        setattr(word, key, value)
+                await self.save_learned_words(learned_words)
+                return word
+
+        return None
 
     async def mark_as_learned(self, word_id: str) -> bool:
         """Move word from learning to learned list"""
@@ -702,7 +822,8 @@ Respond ONLY with the JSON object, no additional text."""
 
         if direction == ExerciseDirection.GREEK_TO_RUSSIAN:
             # Generate Greek sentence, ask to find Russian translation
-            prompt = f"""Generate a Greek sentence at A2 level using the word "{word.greek}" (meaning in Russian: {word.russian}).
+            russian_word = choice([x.strip() for x in word.russian.split(',') if x.strip()])
+            prompt = f"""Generate a Greek sentence at A2 level using the word "{word.greek}" (meaning in Russian: {russian_word}).
 
 Requirements:
 1. Sentence must be at A2 level (simple, clear, everyday language)
@@ -723,12 +844,13 @@ Respond ONLY with the JSON object, no additional text."""
 
         else:  # RUSSIAN_TO_GREEK
             # Generate Russian sentence, ask to find Greek translation
-            prompt = f"""Generate a Russian sentence at A2 level using the word "{word.russian}" (Greek translation: {word.greek}).
+            russian_word = choice([x.strip() for x in word.russian.split(',') if x.strip()])
+            prompt = f"""Generate a Russian sentence at A2 level using the word "{russian_word}" (Greek translation: {word.greek})
 
 Requirements:
 1. Sentence must be simple and clear (A2 level)
 2. Sentence must be 20-30 words long to provide good context
-3. Mark ONLY the target word "{word.russian}"(in ANY form of the word) with double square brackets: [[{word.russian}]]
+3. Mark ONLY the target word "{russian_word}"(in ANY form of the word) with double square brackets: [[{russian_word}]]
 4. The marked word can be in any form(plural, case, tense, third person) or a common inflected form
 5. Provide Greek translation of the entire sentence
 6. In the Greek translation, mark the corresponding Greek word with brackets: [[{word.greek}]]
@@ -775,15 +897,6 @@ Respond ONLY with the JSON object, no additional text."""
             internal_marker = f"[[{marked_matches[0]}]]"
             correct_answer = marked_matches[0]
             translated_word = re.findall(marked_pattern, translation)
-
-            # Extract marked word from translation (for correct answer)
-            # translation_matches = re.findall(marked_pattern, translation)
-            # if translation_matches:
-            #     correct_answer = translation_matches[0]
-            # else:
-            #     # Fallback to original word
-            #     correct_answer = word.russian if direction == ExerciseDirection.GREEK_TO_RUSSIAN else word.greek
-
 
             # Remove brackets from sentence for display
             display_sentence = re.sub(marked_pattern, r'\1', sentence)
@@ -1115,3 +1228,115 @@ Respond ONLY with the JSON object, no additional text."""
         except Exception as exc:
             logger.error(f"Error adding custom word: {exc}")
             return {'success': False, 'error': f'Internal error: {str(exc)}'}
+
+    def _is_single_word(self, text: str) -> bool:
+        """
+        Determine if text is a single word or short phrase (≤3 words)
+        Single words are cached to disk, sentences use LRU cache for URL
+        """
+        word_count = len(text.strip().split())
+        return word_count <= 3
+
+    async def generate_speech(self, text: str, language: str = 'auto') -> Optional[Dict[str, Any]]:
+        """
+        Generate speech audio from text using Replicate speech-02-turbo model
+        - Single words (≤3 words): cached to disk, returns {'type': 'file', 'path': local_path}
+        - Sentences (>3 words): cached URL in LRU memory, returns {'type': 'url', 'path': remote_url}
+
+        Args:
+            text: Text to convert to speech
+            language: 'greek', 'russian', or 'auto' to detect automatically
+
+        Returns:
+            Dict with 'type' ('file' or 'url') and 'path', or None if generation failed
+        """
+        try:
+            # Auto-detect language if needed
+            if language == 'auto':
+                greek_chars = any('\u0370' <= c <= '\u03FF' or '\u1F00' <= c <= '\u1FFF' for c in text)
+                russian_chars = any('\u0400' <= c <= '\u04FF' for c in text)
+
+                if greek_chars and not russian_chars:
+                    language = 'greek'
+                elif russian_chars and not greek_chars:
+                    language = 'russian'
+                else:
+                    # Default to greek if can't determine
+                    language = 'greek'
+
+            # Determine if this is a word or sentence
+            is_word = self._is_single_word(text)
+
+            if is_word:
+                # Check disk cache for words
+                cache_path = self._get_audio_cache_path(text, language)
+                if os.path.exists(cache_path):
+                    logger.info(f"Audio cache HIT (disk) for word: {text}")
+                    return {'type': 'file', 'path': cache_path}
+            else:
+                # Check LRU cache for sentences
+                cached_url = _sentence_audio_cache.get(text)
+                if cached_url:
+                    logger.info(f"Audio cache HIT (LRU) for sentence: {text[:50]}...")
+                    return {'type': 'url', 'path': cached_url}
+
+            # Generate audio using Replicate
+            model_info = replicate_module.REPLICATE_MODELS.get('speech-02-turbo')
+            if not model_info:
+                logger.error("speech-02-turbo model not found in REPLICATE_MODELS")
+                return None
+
+            # Prepare input for speech model
+            input_data = {
+                'text': text,
+            }
+
+            logger.info(f"Generating speech for text: {text[:50]}... (language: {language}, is_word: {is_word})")
+
+            # Call replicate_execute synchronously (we'll wrap it in async context)
+            result = await asyncio.to_thread(
+                replicate_module.replicate_execute,
+                model_info['replicate_id'],
+                input_data
+            )
+
+            # Extract URL from result
+            audio_url = None
+
+            if isinstance(result, str):
+                # Result is a URL string
+                audio_url = result
+            elif isinstance(result, FileOutput):
+                # Result is FileOutput object with url attribute
+                audio_url = result.url
+            elif isinstance(result, list) and len(result) > 0:
+                # Result is a list, take first item
+                first_item = result[0]
+                if isinstance(first_item, str):
+                    audio_url = first_item
+                elif hasattr(first_item, 'url'):
+                    audio_url = first_item.url
+
+            if not audio_url:
+                logger.error(f"Could not extract audio URL from result: {type(result)}")
+                return None
+
+            logger.info(f"Generated speech audio: {audio_url}")
+
+            if is_word:
+                # Download and cache to disk for words
+                cache_path = self._get_audio_cache_path(text, language)
+                success = await self._download_and_cache_audio(audio_url, cache_path)
+                if success:
+                    return {'type': 'file', 'path': cache_path}
+                else:
+                    # Failed to cache, return URL anyway
+                    return {'type': 'url', 'path': audio_url}
+            else:
+                # For sentences, cache URL in LRU and return URL
+                _sentence_audio_cache.set(text, audio_url)
+                return {'type': 'url', 'path': audio_url}
+
+        except Exception as exc:
+            logger.error(f"Error generating speech: {exc}")
+            return None

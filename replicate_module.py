@@ -188,6 +188,13 @@ REPLICATE_MODELS = {
                 'description': 'Duration of the video in seconds'
             }
         }
+    },
+    'speech-02-turbo': {
+        'description': 'Text-to-Audio (T2A) that offers voice synthesis, emotional expression, and multilingual capabilities. Designed for real-time applications with low latency',
+        'replicate_id': 'minimax/speech-02-turbo',
+        'input_type': 'text',
+        'input_field': 'text',
+        'output_type': 'audio'
     }
 }
 
@@ -588,7 +595,8 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
         return
 
     if message.content_type == 'text':
-        input_data['prompt'] = message.text
+        input_field = replicate_model.get('input_field', 'prompt')
+        input_data[input_field] = message.text
 
     if message.content_type == 'photo':
         file_info = await botnav.bot.get_file(message.photo[-1].file_id)

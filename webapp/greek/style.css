@@ -165,6 +165,31 @@ h2 {
     cursor: not-allowed;
 }
 
+/* Search Container */
+.search-container {
+    margin-bottom: 16px;
+}
+
+.search-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--tg-theme-hint-color, #e0e0e0);
+    border-radius: 10px;
+    font-size: 16px;
+    background: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #000000);
+    transition: border-color 0.3s;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--tg-theme-button-color, #3390ec);
+}
+
+.search-input::placeholder {
+    color: var(--tg-theme-hint-color, #999999);
+}
+
 /* Words List */
 .words-list {
     display: flex;
@@ -206,12 +231,14 @@ h2 {
 
 .word-actions {
     display: flex;
-    gap: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
 }
 
 .word-actions button {
-    padding: 8px 12px;
+    padding: 6px 10px;
     font-size: 12px;
+    min-width: 32px;
 }
 
 /* Exercise Screen */
@@ -321,6 +348,9 @@ h2 {
     font-size: 16px;
     color: #757575;
     margin-bottom: 30px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .options {
@@ -827,6 +857,64 @@ h2 {
     opacity: 0.8;
 }
 
+/* Lists Tab */
+.lists-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.list-card {
+    background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.list-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.list-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.list-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--tg-theme-text-color, #000);
+}
+
+.list-count {
+    font-size: 14px;
+    color: var(--tg-theme-hint-color, #999);
+    margin-top: 4px;
+}
+
+.list-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.section-heading {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 20px 0 12px 0;
+    color: var(--tg-theme-text-color, #000);
+}
+
+.modal-large {
+    max-width: 600px;
+    max-height: 90vh;
+}
+
 /* Utility */
 .hidden {
     display: none !important;
@@ -838,4 +926,83 @@ h2 {
 
 .mt-20 {
     margin-top: 20px;
+}
+
+/* Speech buttons */
+.btn-speak {
+    color: var(--tg-theme-hint-color, #999);
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin-left: 8px;
+    border-radius: 4px;
+    transition: all 0.3s;
+    opacity: 0.7;
+}
+
+.btn-speak:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.btn-speak:active {
+    transform: scale(0.95);
+}
+
+.btn-speak:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.btn-speak.loading {
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+.btn-speak-small {
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: all 0.3s;
+    opacity: 0.6;
+    margin-left: auto;
+}
+
+.btn-speak-small:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.btn-speak-small:active {
+    transform: scale(0.9);
+}
+
+.btn-speak-small:disabled {
+    opacity: 0.2;
+    cursor: not-allowed;
+}
+
+.btn-speak-small.loading {
+    animation: pulse 1s infinite;
+}
+
+/* Matching card layout with speak button */
+.matching-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.matching-card-text {
+    flex: 1;
 }

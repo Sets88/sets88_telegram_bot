@@ -5,6 +5,7 @@ Provides bot commands and navigation for Greek word learning
 
 from telebot.types import Message, WebAppInfo
 from telebot import types
+import os
 
 import config
 from telebot_nav import TeleBotNav
@@ -165,10 +166,12 @@ class GreekWebApp:
         self.app.router.add_post('/greek/api/mark-learned', self.mark_learned)
         self.app.router.add_post('/greek/api/move-to-learning', self.move_to_learning)
         self.app.router.add_delete('/greek/api/words/{word_id}', self.delete_word)
+        self.app.router.add_patch('/greek/api/words/{word_id}', self.update_word)
         self.app.router.add_get('/greek/api/stats', self.get_stats)
         self.app.router.add_get('/greek/api/word-details/{word_id}', self.get_word_details)
         self.app.router.add_post('/greek/api/word-forms', self.get_word_forms_by_text)
         self.app.router.add_post('/greek/api/translate-russian', self.translate_russian_to_greek)
+        self.app.router.add_post('/greek/api/speak', self.generate_speech)
 
         logger.info("Greek Learning API routes configured")
 
@@ -478,6 +481,31 @@ class GreekWebApp:
             logger.exception(f"Error deleting word: {exc}")
             return web.json_response({'error': 'Internal server error'}, status=500)
 
+    async def update_word(self, request: web.Request) -> web.Response:
+        """PATCH /api/greek/words/{word_id} - Update word fields (e.g., lists)"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            word_id = request.match_info['word_id']
+            data = await request.json()
+
+            manager = GreekLearningManager(user['id'])
+            updated_word = await manager.update_word(word_id, data)
+
+            if updated_word:
+                return web.json_response({
+                    'success': True,
+                    'word': updated_word.to_dict()
+                })
+            else:
+                return web.json_response({'error': 'Word not found'}, status=404)
+
+        except Exception as exc:
+            logger.exception(f"Error updating word: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
     async def get_stats(self, request: web.Request) -> web.Response:
         """GET /api/greek/stats - Get user statistics"""
         user = await self._authenticate(request)
@@ -721,6 +749,62 @@ class GreekWebApp:
 
         except Exception as exc:
             logger.exception(f"Error adding custom word: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def generate_speech(self, request: web.Request) -> web.Response:
+        """
+        POST /api/greek/speak - Generate speech audio from text
+        Returns:
+        - For words (≤3 words): audio file (binary)
+        - For sentences (>3 words): JSON with audio_url
+        """
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            data = await request.json()
+            text = data.get('text', '').strip()
+            language = data.get('language', 'auto')
+
+            if not text:
+                return web.json_response({'error': 'Text is required'}, status=400)
+
+            manager = GreekLearningManager(user['id'])
+
+            # Generate speech audio (returns dict with type and path)
+            result = await manager.generate_speech(text, language)
+
+            if not result:
+                return web.json_response({'error': 'Failed to generate speech'}, status=500)
+
+            result_type = result.get('type')
+            result_path = result.get('path')
+
+            if result_type == 'file':
+                # Return audio file directly for words
+                if not os.path.exists(result_path):
+                    return web.json_response({'error': 'Audio file not found'}, status=404)
+
+                return web.FileResponse(
+                    result_path,
+                    headers={
+                        'Content-Type': 'audio/mpeg',
+                        'Cache-Control': 'public, max-age=86400'  # Cache for 1 day
+                    }
+                )
+            elif result_type == 'url':
+                # Return JSON with URL for sentences
+                return web.json_response({
+                    'success': True,
+                    'audio_url': result_path,
+                    'text': text
+                })
+            else:
+                return web.json_response({'error': 'Invalid result type'}, status=500)
+
+        except Exception as exc:
+            logger.exception(f"Error generating speech: {exc}")
             return web.json_response({'error': 'Internal server error'}, status=500)
 
 

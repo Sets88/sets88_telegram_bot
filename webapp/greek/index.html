@@ -20,6 +20,7 @@
             <div class="tabs">
                 <button class="tab active" data-tab="learning">Learning</button>
                 <button class="tab" data-tab="learned">Learned</button>
+                <button class="tab" data-tab="lists">Lists</button>
                 <button class="tab" data-tab="stats">Stats</button>
             </div>
 
@@ -36,6 +37,10 @@
 
                     <button id="practice-btn" class="btn btn-success btn-large">Practice</button>
 
+                    <div class="search-container">
+                        <input type="text" id="learning-search-input" class="search-input" placeholder="🔍 Search words...">
+                    </div>
+
                     <div id="learning-words-list" class="words-list"></div>
 
                 </div>
@@ -43,7 +48,22 @@
                 <!-- Learned Tab -->
                 <div id="learned-tab" class="tab-panel">
                     <h2>Learned Words</h2>
+
+                    <div class="search-container">
+                        <input type="text" id="learned-search-input" class="search-input" placeholder="🔍 Search words...">
+                    </div>
+
                     <div id="learned-words-list" class="words-list"></div>
+                </div>
+
+                <!-- Lists Tab -->
+                <div id="lists-tab" class="tab-panel">
+                    <div class="header">
+                        <h2>Custom Lists</h2>
+                        <button id="create-list-btn" class="btn btn-primary">+ Create List</button>
+                    </div>
+
+                    <div id="lists-container" class="lists-container"></div>
                 </div>
 
                 <!-- Stats Tab -->
@@ -219,6 +239,80 @@
                 <div class="modal-buttons">
                     <button id="add-custom-word-cancel-btn" class="btn btn-secondary">Cancel</button>
                     <button id="add-custom-word-confirm-btn" class="btn btn-primary">Add Word</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create List Modal -->
+        <div id="create-list-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Create New List</h3>
+                <p>Enter a name for your list:</p>
+                <input type="text" id="list-name-input" placeholder="List name..." class="input">
+                <div class="modal-buttons">
+                    <button id="create-list-cancel-btn" class="btn btn-secondary">Cancel</button>
+                    <button id="create-list-confirm-btn" class="btn btn-primary">Create</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manage List Modal -->
+        <div id="manage-list-modal" class="modal hidden">
+            <div class="modal-content modal-large">
+                <div class="word-details-header">
+                    <h3 id="manage-list-title">Manage List</h3>
+                    <button id="manage-list-close" class="btn-close">&times;</button>
+                </div>
+
+                <div id="manage-list-content">
+                    <div class="list-actions">
+                        <button id="rename-list-btn" class="btn btn-secondary">Rename List</button>
+                        <button id="delete-list-btn" class="btn btn-danger">Delete List</button>
+                        <button id="practice-list-btn" class="btn btn-success">Practice This List</button>
+                    </div>
+
+                    <h4 class="section-heading">Words in this list (<span id="list-word-count">0</span>)</h4>
+                    <div id="list-words-container" class="words-list"></div>
+
+                    <h4 class="section-heading">Add Words to List</h4>
+                    <div class="search-container">
+                        <input type="text" id="add-to-list-search" class="search-input" placeholder="🔍 Search words to add...">
+                    </div>
+                    <div id="available-words-container" class="words-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Word Modal -->
+        <div id="edit-word-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Edit Word</h3>
+                <div class="form-group">
+                    <label class="form-label">Greek:</label>
+                    <input type="text" id="edit-word-greek" class="input">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Russian:</label>
+                    <input type="text" id="edit-word-russian" class="input">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Word Type:</label>
+                    <select id="edit-word-type" class="word-type-dropdown">
+                        <option value="">Unknown</option>
+                        <option value="noun">Noun</option>
+                        <option value="verb">Verb</option>
+                        <option value="adjective">Adjective</option>
+                        <option value="adverb">Adverb</option>
+                        <option value="pronoun">Pronoun</option>
+                        <option value="preposition">Preposition</option>
+                        <option value="conjunction">Conjunction</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div id="edit-word-error" class="error-message hidden"></div>
+                <div class="modal-buttons">
+                    <button id="edit-word-cancel-btn" class="btn btn-secondary">Cancel</button>
+                    <button id="edit-word-save-btn" class="btn btn-primary">Save</button>
                 </div>
             </div>
         </div>

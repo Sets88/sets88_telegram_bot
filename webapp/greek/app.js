@@ -31,7 +31,15 @@ const state = {
         selectedRight: null,
         matchedPairs: [],
         incorrectAttempts: 0
-    }
+    },
+    searchQueries: {
+        learning: '',
+        learned: '',
+        listWords: ''
+    },
+    lists: [],  // All unique list names
+    currentList: null,  // Currently selected list for management
+    selectedListForPractice: null  // List selected for practice
 };
 
 // ========== API Helper Functions ==========
@@ -260,10 +268,36 @@ async function moveToLearning(wordId) {
     }
 }
 
+async function editWord(wordId, updates) {
+    try {
+        const data = await apiRequest(`words/${wordId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(updates)
+        });
+        return data;
+    } catch (error) {
+        console.error('Error editing word:', error);
+        throw error;
+    }
+}
+
 async function getExercise(wordId = null, direction = 'random') {
     try {
         // Show loading spinner
         showExerciseLoading();
+
+        // If practicing a list, select a random word from the list
+        if (state.selectedListForPractice && !wordId) {
+            const words = getWordsByList(state.selectedListForPractice);
+            const listWords = words.learning;  // Only use learning words for practice
+
+            if (listWords.length === 0) {
+                throw new Error('No learning words in this list');
+            }
+
+            const randomWord = listWords[Math.floor(Math.random() * listWords.length)];
+            wordId = randomWord.id;
+        }
 
         let url = 'exercise?';
         if (wordId) url += `word_id=${wordId}&`;
@@ -366,6 +400,240 @@ async function validateMatchingResults(results) {
     }
 }
 
+async function updateWordLists(wordId, lists) {
+    try {
+        const data = await apiRequest(`words/${wordId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ lists })
+        });
+        return data;
+    } catch (error) {
+        console.error('Error updating word lists:', error);
+        throw error;
+    }
+}
+
+// ========== Lists Management ==========
+
+function getAllListNames() {
+    /**
+     * Get all unique list names from all words
+     */
+    const listsSet = new Set();
+
+    state.learningWords.forEach(word => {
+        if (word.lists && Array.isArray(word.lists)) {
+            word.lists.forEach(listName => listsSet.add(listName));
+        }
+    });
+
+    state.learnedWords.forEach(word => {
+        if (word.lists && Array.isArray(word.lists)) {
+            word.lists.forEach(listName => listsSet.add(listName));
+        }
+    });
+
+    return Array.from(listsSet).sort();
+}
+
+function getListStats(listName) {
+    /**
+     * Get statistics for a list
+     */
+    let learningCount = 0;
+    let learnedCount = 0;
+
+    state.learningWords.forEach(word => {
+        if (word.lists && word.lists.includes(listName)) {
+            learningCount++;
+        }
+    });
+
+    state.learnedWords.forEach(word => {
+        if (word.lists && word.lists.includes(listName)) {
+            learnedCount++;
+        }
+    });
+
+    return {
+        learning: learningCount,
+        learned: learnedCount,
+        total: learningCount + learnedCount
+    };
+}
+
+function getWordsByList(listName) {
+    /**
+     * Get all words (learning + learned) for a specific list
+     */
+    const learning = state.learningWords.filter(w =>
+        w.lists && w.lists.includes(listName)
+    );
+    const learned = state.learnedWords.filter(w =>
+        w.lists && w.lists.includes(listName)
+    );
+
+    return { learning, learned };
+}
+
+async function addWordToList(wordId, listName) {
+    /**
+     * Add a word to a list
+     */
+    // Find word in learning or learned
+    let word = state.learningWords.find(w => w.id === wordId);
+    let isLearning = true;
+
+    if (!word) {
+        word = state.learnedWords.find(w => w.id === wordId);
+        isLearning = false;
+    }
+
+    if (!word) {
+        console.error('Word not found:', wordId);
+        return false;
+    }
+
+    // Initialize lists if needed
+    if (!word.lists) {
+        word.lists = [];
+    }
+
+    // Add list if not already present
+    if (!word.lists.includes(listName)) {
+        word.lists.push(listName);
+
+        // Update on backend
+        try {
+            await updateWordLists(wordId, word.lists);
+
+            // Refresh lists
+            state.lists = getAllListNames();
+            renderLists();
+
+            return true;
+        } catch (error) {
+            // Revert on error
+            word.lists = word.lists.filter(l => l !== listName);
+            console.error('Failed to add word to list:', error);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+async function removeWordFromList(wordId, listName) {
+    /**
+     * Remove a word from a list
+     */
+    // Find word in learning or learned
+    let word = state.learningWords.find(w => w.id === wordId);
+
+    if (!word) {
+        word = state.learnedWords.find(w => w.id === wordId);
+    }
+
+    if (!word || !word.lists) {
+        return false;
+    }
+
+    // Remove list
+    const index = word.lists.indexOf(listName);
+    if (index > -1) {
+        word.lists.splice(index, 1);
+
+        // Update on backend
+        try {
+            await updateWordLists(wordId, word.lists);
+
+            // Refresh lists
+            state.lists = getAllListNames();
+            renderLists();
+
+            return true;
+        } catch (error) {
+            // Revert on error
+            word.lists.push(listName);
+            console.error('Failed to remove word from list:', error);
+            return false;
+        }
+    }
+
+    return false;
+}
+
+async function renameList(oldName, newName) {
+    /**
+     * Rename a list across all words
+     */
+    if (!oldName || !newName || oldName === newName) {
+        return false;
+    }
+
+    const updates = [];
+
+    // Update all words with this list
+    const allWords = [...state.learningWords, ...state.learnedWords];
+
+    for (const word of allWords) {
+        if (word.lists && word.lists.includes(oldName)) {
+            const index = word.lists.indexOf(oldName);
+            word.lists[index] = newName;
+            updates.push(updateWordLists(word.id, word.lists));
+        }
+    }
+
+    try {
+        await Promise.all(updates);
+
+        // Refresh lists
+        state.lists = getAllListNames();
+        renderLists();
+
+        return true;
+    } catch (error) {
+        console.error('Failed to rename list:', error);
+        // Reload words to revert
+        await loadWords();
+        await loadLearnedWords();
+        return false;
+    }
+}
+
+async function deleteList(listName) {
+    /**
+     * Delete a list from all words
+     */
+    const updates = [];
+
+    // Remove list from all words
+    const allWords = [...state.learningWords, ...state.learnedWords];
+
+    for (const word of allWords) {
+        if (word.lists && word.lists.includes(listName)) {
+            word.lists = word.lists.filter(l => l !== listName);
+            updates.push(updateWordLists(word.id, word.lists));
+        }
+    }
+
+    try {
+        await Promise.all(updates);
+
+        // Refresh lists
+        state.lists = getAllListNames();
+        renderLists();
+
+        return true;
+    } catch (error) {
+        console.error('Failed to delete list:', error);
+        // Reload words to revert
+        await loadWords();
+        await loadLearnedWords();
+        return false;
+    }
+}
+
 // ========== Word Details & Long Press ==========
 
 function detectLanguage(text) {
@@ -432,6 +700,109 @@ async function translateRussianToGreek(russianWord) {
     } catch (error) {
         console.error('Error translating Russian to Greek:', error);
         throw error;
+    }
+}
+
+async function speakText(text, language = 'auto') {
+    try {
+        const url = `/greek/api/speak`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Telegram-Init-Data': tg?.initData || ''
+            },
+            body: JSON.stringify({
+                text: text,
+                language: language
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}`);
+        }
+
+        // Check content type to determine response type
+        const contentType = response.headers.get('Content-Type');
+
+        if (contentType && contentType.includes('audio/mpeg')) {
+            // Response is audio file (blob) - for words
+            const blob = await response.blob();
+            return { type: 'blob', data: blob };
+        } else {
+            // Response is JSON with URL - for sentences
+            const json = await response.json();
+            return { type: 'url', data: json.audio_url };
+        }
+    } catch (error) {
+        console.error('Error generating speech:', error);
+        throw error;
+    }
+}
+
+async function playSpeech(text, language = 'auto', buttonElement = null) {
+    try {
+        // Disable button and show loading state
+        if (buttonElement) {
+            buttonElement.disabled = true;
+            buttonElement.classList.add('loading');
+        }
+
+        // Request speech audio
+        const result = await speakText(text, language);
+
+        let audioUrl;
+        let needsCleanup = false;
+
+        if (result.type === 'blob') {
+            // Create object URL from blob (words)
+            audioUrl = URL.createObjectURL(result.data);
+            needsCleanup = true;
+        } else if (result.type === 'url') {
+            // Use remote URL directly (sentences)
+            audioUrl = result.data;
+            needsCleanup = false;
+        } else {
+            throw new Error('Unknown audio result type');
+        }
+
+        // Create and play audio
+        const audio = new Audio(audioUrl);
+
+        audio.onended = () => {
+            // Re-enable button when audio finishes
+            if (buttonElement) {
+                buttonElement.disabled = false;
+                buttonElement.classList.remove('loading');
+            }
+            // Clean up object URL if needed
+            if (needsCleanup) {
+                URL.revokeObjectURL(audioUrl);
+            }
+        };
+
+        audio.onerror = (error) => {
+            console.error('Error playing audio:', error);
+            if (buttonElement) {
+                buttonElement.disabled = false;
+                buttonElement.classList.remove('loading');
+            }
+            // Clean up object URL if needed
+            if (needsCleanup) {
+                URL.revokeObjectURL(audioUrl);
+            }
+            tg.showAlert('Failed to play audio');
+        };
+
+        await audio.play();
+    } catch (error) {
+        console.error('Error playing speech:', error);
+        if (buttonElement) {
+            buttonElement.disabled = false;
+            buttonElement.classList.remove('loading');
+        }
+        tg.showAlert('Failed to generate speech');
     }
 }
 
@@ -840,6 +1211,26 @@ function hideWordDetailsModal() {
 
 // ========== UI Rendering Functions ==========
 
+function filterWords(words, searchQuery) {
+    /**
+     * Filter words by search query (searches in both Greek and Russian)
+     * @param {Array} words - Array of word objects
+     * @param {string} searchQuery - Search query string
+     * @returns {Array} Filtered array of words
+     */
+    if (!searchQuery || searchQuery.trim() === '') {
+        return words;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+
+    return words.filter(word => {
+        const greekMatch = word.greek.toLowerCase().includes(query);
+        const russianMatch = word.russian.toLowerCase().includes(query);
+        return greekMatch || russianMatch;
+    });
+}
+
 function renderLearningWords() {
     const container = document.getElementById('learning-words-list');
 
@@ -854,9 +1245,23 @@ function renderLearningWords() {
         return;
     }
 
+    // Filter words by search query
+    const filteredWords = filterWords(state.learningWords, state.searchQueries.learning);
+
+    // Show empty state if no words match search
+    if (filteredWords.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🔍</div>
+                <div class="empty-state-text">No words found matching your search.</div>
+            </div>
+        `;
+        return;
+    }
+
     document.getElementById('practice-btn').disabled = false;
 
-    container.innerHTML = state.learningWords.map(word => {
+    container.innerHTML = filteredWords.map(word => {
         const accuracy = word.exercise_count > 0
             ? Math.round((word.correct_count / word.exercise_count) * 100)
             : 0;
@@ -864,7 +1269,10 @@ function renderLearningWords() {
         return `
             <div class="word-card" data-word-id="${word.id}">
                 <div class="word-content">
-                    <div class="word-greek">🇬🇷 ${word.greek}</div>
+                    <div class="word-greek">
+                        🇬🇷 ${word.greek}
+                        <button class="btn-speak" onclick="playSpeech('${word.greek.replace(/'/g, "\\'")}', 'greek', this)" title="Speak Greek">🔊</button>
+                    </div>
                     <div class="word-russian">🇷🇺 ${word.russian}</div>
                     ${word.exercise_count > 0 ? `
                         <div class="word-stats">
@@ -873,8 +1281,9 @@ function renderLearningWords() {
                     ` : ''}
                 </div>
                 <div class="word-actions">
-                    <button class="btn btn-success" onclick="markWordAsLearned('${word.id}')">✓</button>
-                    <button class="btn btn-danger" onclick="deleteWord('${word.id}')">✕</button>
+                    <button class="btn btn-secondary" onclick="showEditWordModal('${word.id}')" title="Edit">✎</button>
+                    <button class="btn btn-success" onclick="markWordAsLearned('${word.id}')" title="Mark as learned">✓</button>
+                    <button class="btn btn-danger" onclick="deleteWord('${word.id}')" title="Delete">✕</button>
                 </div>
             </div>
         `;
@@ -897,7 +1306,21 @@ function renderLearnedWords() {
         return;
     }
 
-    container.innerHTML = state.learnedWords.map(word => {
+    // Filter words by search query
+    const filteredWords = filterWords(state.learnedWords, state.searchQueries.learned);
+
+    // Show empty state if no words match search
+    if (filteredWords.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🔍</div>
+                <div class="empty-state-text">No words found matching your search.</div>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filteredWords.map(word => {
         const accuracy = word.total_exercises > 0
             ? Math.round((word.total_correct / word.total_exercises) * 100)
             : 0;
@@ -905,14 +1328,18 @@ function renderLearnedWords() {
         return `
             <div class="word-card" data-word-id="${word.id}">
                 <div class="word-content">
-                    <div class="word-greek">🇬🇷 ${word.greek}</div>
+                    <div class="word-greek">
+                        🇬🇷 ${word.greek}
+                        <button class="btn-speak" onclick="playSpeech('${word.greek.replace(/'/g, "\\'")}', 'greek', this)" title="Speak Greek">🔊</button>
+                    </div>
                     <div class="word-russian">🇷🇺 ${word.russian}</div>
                     <div class="word-stats">
                         ${word.total_correct}/${word.total_exercises} correct (${accuracy}%)
                     </div>
                 </div>
                 <div class="word-actions">
-                    <button class="btn btn-primary" onclick="moveToLearning('${word.id}')">↺</button>
+                    <button class="btn btn-secondary" onclick="showEditWordModal('${word.id}')" title="Edit">✎</button>
+                    <button class="btn btn-primary" onclick="moveToLearning('${word.id}')" title="Move to learning">↺</button>
                 </div>
             </div>
         `;
@@ -986,12 +1413,137 @@ function renderStats() {
     `;
 }
 
+function renderLists() {
+    const container = document.getElementById('lists-container');
+
+    if (state.lists.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📋</div>
+                <div class="empty-state-text">No custom lists yet. Create one to organize your words!</div>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = state.lists.map(listName => {
+        const stats = getListStats(listName);
+        return `
+            <div class="list-card" onclick="openManageListModal('${listName.replace(/'/g, "\\'")}')">
+                <div class="list-card-header">
+                    <div class="list-name">📋 ${listName}</div>
+                </div>
+                <div class="list-count">
+                    ${stats.total} words (${stats.learning} learning, ${stats.learned} learned)
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderManageListModal(listName) {
+    const words = getWordsByList(listName);
+    const allWords = [...words.learning, ...words.learned];
+
+    // Update title
+    document.getElementById('manage-list-title').textContent = `Manage List: ${listName}`;
+    document.getElementById('list-word-count').textContent = allWords.length;
+
+    // Render words in list
+    const listWordsContainer = document.getElementById('list-words-container');
+    if (allWords.length === 0) {
+        listWordsContainer.innerHTML = `
+            <div class="empty-state-text" style="padding: 20px;">
+                No words in this list yet.
+            </div>
+        `;
+    } else {
+        listWordsContainer.innerHTML = allWords.map(word => {
+            const isLearned = words.learned.includes(word);
+            return `
+                <div class="word-card">
+                    <div class="word-content">
+                        <div class="word-greek">🇬🇷 ${word.greek}</div>
+                        <div class="word-russian">🇷🇺 ${word.russian}</div>
+                        ${isLearned ? '<div class="word-stats">✅ Learned</div>' : ''}
+                    </div>
+                    <div class="word-actions">
+                        <button class="btn btn-danger" onclick="removeWordFromListUI('${word.id}', '${listName.replace(/'/g, "\\'")}')">Remove</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Render available words to add
+    renderAvailableWordsForList(listName);
+}
+
+function renderAvailableWordsForList(listName, searchQuery = '') {
+    const words = getWordsByList(listName);
+    const wordsInList = new Set([...words.learning, ...words.learned].map(w => w.id));
+
+    // Get all words not in list
+    let availableWords = [
+        ...state.learningWords.filter(w => !wordsInList.has(w.id)),
+        ...state.learnedWords.filter(w => !wordsInList.has(w.id))
+    ];
+
+    // Filter by search
+    if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        availableWords = availableWords.filter(w =>
+            w.greek.toLowerCase().includes(query) ||
+            w.russian.toLowerCase().includes(query)
+        );
+    }
+
+    const container = document.getElementById('available-words-container');
+
+    if (availableWords.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state-text" style="padding: 20px;">
+                ${searchQuery ? 'No matching words found.' : 'All words are already in this list.'}
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = availableWords.slice(0, 20).map(word => {
+        return `
+            <div class="word-card">
+                <div class="word-content">
+                    <div class="word-greek">🇬🇷 ${word.greek}</div>
+                    <div class="word-russian">🇷🇺 ${word.russian}</div>
+                </div>
+                <div class="word-actions">
+                    <button class="btn btn-success" onclick="addWordToListUI('${word.id}', '${listName.replace(/'/g, "\\'")}')">+ Add</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (availableWords.length > 20) {
+        container.innerHTML += `
+            <div class="empty-state-text" style="padding: 10px;">
+                Showing first 20 words. Use search to find more.
+            </div>
+        `;
+    }
+}
+
 function renderMatchingExercise() {
     const ex = state.currentExercise;
 
     document.getElementById('exercise-loading').classList.add('hidden');
     document.getElementById('exercise-content').style.display = 'block';
-    document.getElementById('exercise-counter').textContent = `Exercise ${state.exerciseCount}`;
+
+    // Update counter (with list name if practicing a list)
+    let counterText = `Exercise ${state.exerciseCount}`;
+    if (state.selectedListForPractice) {
+        counterText += ` - 📋 ${state.selectedListForPractice}`;
+    }
+    document.getElementById('exercise-counter').textContent = counterText;
 
     // Prepare pairs for matching
     const pairs = ex.pairs;
@@ -1015,7 +1567,10 @@ function renderMatchingExercise() {
 
     document.getElementById('exercise-question').innerHTML = `
         ${questionText}
-        <div class="exercise-hint">💡 Long press any card to see word forms</div>
+        <div class="exercise-hint">
+            💡 Long press any card to see word forms
+            <span style="margin-left: 10px;">🔊 Click speaker icon to hear pronunciation</span>
+        </div>
     `;
     document.getElementById('exercise-sentence').style.display = 'none';
     document.getElementById('exercise-sentence-clickable').style.display = 'none';
@@ -1027,6 +1582,9 @@ function renderMatchingExercise() {
 
     // Create matching container
     const contentDiv = document.getElementById('exercise-content');
+    const leftLanguage = direction === 'greek_to_russian' ? 'greek' : 'russian';
+    const rightLanguage = direction === 'greek_to_russian' ? 'russian' : 'greek';
+
     let matchingHTML = `
         <div class="matching-progress">
             Matched: <span id="matched-count">0</span> / ${pairs.length}
@@ -1035,14 +1593,16 @@ function renderMatchingExercise() {
             <div class="matching-column" id="left-column">
                 ${leftItems.map(item => `
                     <div class="matching-card" data-id="${item.id}" data-side="left">
-                        ${item.text}
+                        <div class="matching-card-text">${item.text}</div>
+                        <button class="btn-speak-small" onclick="event.stopPropagation(); playSpeech('${item.text.replace(/'/g, "\\'")}', '${leftLanguage}', this)" title="Speak">🔊</button>
                     </div>
                 `).join('')}
             </div>
             <div class="matching-column" id="right-column">
                 ${rightItems.map(item => `
                     <div class="matching-card" data-id="${item.id}" data-side="right">
-                        ${item.text}
+                        <div class="matching-card-text">${item.text}</div>
+                        <button class="btn-speak-small" onclick="event.stopPropagation(); playSpeech('${item.text.replace(/'/g, "\\'")}', '${rightLanguage}', this)" title="Speak">🔊</button>
                     </div>
                 `).join('')}
             </div>
@@ -1172,6 +1732,72 @@ async function showMatchingComplete() {
     document.getElementById('next-exercise-btn').classList.remove('hidden');
 }
 
+function parseSentenceWords(sentence, correctAnswer, wordId) {
+    /**
+     * Parse sentence into clickable word elements.
+     * Handles multi-word phrases by grouping them into a single button.
+     *
+     * @param {string} sentence - The sentence to parse
+     * @param {string} correctAnswer - The correct answer (may be multi-word)
+     * @param {string} wordId - The word ID for the correct answer
+     * @returns {string} HTML string of clickable word elements
+     */
+    const words = sentence.split(/\s+/); // Split by whitespace
+
+    // Check if correct answer is a multi-word phrase
+    const correctAnswerWords = correctAnswer.split(/\s+/).map(word =>
+        word.replace(/[.,!?;:»«"""'()—–\-\[\]]/g, '').toLowerCase()
+    );
+    const isMultiWord = correctAnswerWords.length > 1;
+
+    // If multi-word, find the starting index in the sentence
+    let multiWordStartIndex = -1;
+    if (isMultiWord) {
+        for (let i = 0; i <= words.length - correctAnswerWords.length; i++) {
+            let match = true;
+            for (let j = 0; j < correctAnswerWords.length; j++) {
+                const cleanWord = words[i + j].replace(/[.,!?;:»«"""'()—–\-\[\]]/g, '').toLowerCase();
+                if (cleanWord !== correctAnswerWords[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                multiWordStartIndex = i;
+                break;
+            }
+        }
+    }
+
+    const htmlParts = words.map((word, index) => {
+        // Skip words that are part of a multi-word phrase (but not the first word)
+        if (isMultiWord && multiWordStartIndex !== -1 &&
+            index > multiWordStartIndex && index < multiWordStartIndex + correctAnswerWords.length) {
+            return ''; // Skip this word, it's included in the multi-word button
+        }
+
+        // Clean up punctuation for comparison but keep it for display
+        const cleanWord = word.replace(/[.,!?;:»«"""'()—–\-\[\]]/g, '');
+
+        // Check if this is the start of a multi-word phrase
+        if (isMultiWord && index === multiWordStartIndex) {
+            // Create a button for the entire multi-word phrase
+            const phraseWords = words.slice(index, index + correctAnswerWords.length);
+            const phraseText = phraseWords.join(' ');
+            const phraseClean = correctAnswer; // Use the correct answer for comparison
+            const wordIdAttr = `data-word-id="${wordId}"`;
+            return `<span class="sentence-word" data-word="${phraseClean}" data-index="${index}" ${wordIdAttr}>${phraseText}</span>`;
+        }
+
+        // Regular single word
+        const isTargetWord = cleanWord.toLowerCase() === correctAnswer.toLowerCase();
+        const wordIdAttr = isTargetWord ? `data-word-id="${wordId}"` : '';
+        return `<span class="sentence-word" data-word="${cleanWord}" data-index="${index}" ${wordIdAttr}>${word}</span>`;
+    }).filter(html => html !== '');
+
+    return htmlParts.join('');
+}
+
 function renderExercise() {
     const ex = state.currentExercise;
 
@@ -1179,8 +1805,12 @@ function renderExercise() {
     document.getElementById('exercise-loading').classList.add('hidden');
     document.getElementById('exercise-content').style.display = 'block';
 
-    // Update counter
-    document.getElementById('exercise-counter').textContent = `Exercise ${state.exerciseCount}`;
+    // Update counter (with list name if practicing a list)
+    let counterText = `Exercise ${state.exerciseCount}`;
+    if (state.selectedListForPractice) {
+        counterText += ` - 📋 ${state.selectedListForPractice}`;
+    }
+    document.getElementById('exercise-counter').textContent = counterText;
 
     // Build question text
     let questionText = '';
@@ -1198,9 +1828,16 @@ function renderExercise() {
         targetWord = ex.translated_word; // Greek word
     }
 
+    // Determine language for speak button
+    const sentenceLanguage = ex.direction === 'greek_to_russian' ? 'greek' : 'russian';
+    const translationLanguage = ex.direction === 'greek_to_russian' ? 'russian' : 'greek';
+
     document.getElementById('exercise-question').innerHTML = `
         ${questionText}<br><strong>"${targetWord}"</strong>
-        <div class="exercise-hint">💡 Long press any word to see its forms (even if not in your list)</div>
+        <div class="exercise-hint">
+            💡 Long press any word to see its forms (even if not in your list)
+            <button class="btn-speak" onclick="playSpeech('${ex.sentence.replace(/'/g, "\\'")}', '${sentenceLanguage}', this)" title="Speak sentence">🔊 Play sentence</button>
+        </div>
     `;
 
     // Hide the non-interactive sentence, show clickable version
@@ -1218,16 +1855,7 @@ function renderExercise() {
 
     // Render clickable sentence words
     const clickableContainer = document.getElementById('exercise-sentence-clickable');
-    const words = ex.sentence.split(/\s+/); // Split by whitespace
-    clickableContainer.innerHTML = words.map((word, index) => {
-        // Clean up punctuation for comparison but keep it for display
-        // Remove common punctuation marks (must match backend normalization)
-        const cleanWord = word.replace(/[.,!?;:»«"""'()—–\-\[\]]/g, '');
-        // Add word_id to the target word for long press
-        const isTargetWord = cleanWord.toLowerCase() === ex.correct_answer.toLowerCase();
-        const wordIdAttr = isTargetWord ? `data-word-id="${ex.word_id}"` : '';
-        return `<span class="sentence-word" data-word="${cleanWord}" data-index="${index}" ${wordIdAttr}>${word}</span>`;
-    }).join('');
+    clickableContainer.innerHTML = parseSentenceWords(ex.sentence, ex.correct_answer, ex.word_id);
 
     // Add click handlers to words
     document.querySelectorAll('.sentence-word').forEach(wordEl => {
@@ -1237,7 +1865,11 @@ function renderExercise() {
     // Add long press handlers to words
     attachLongPressToSentenceWords();
 
-    document.getElementById('exercise-translation').textContent = `Translation: ${ex.sentence_translation}`;
+    // Display translation with speak button
+    document.getElementById('exercise-translation').innerHTML = `
+        <span>Translation: ${ex.sentence_translation}</span>
+        <button class="btn-speak" onclick="playSpeech('${ex.sentence_translation.replace(/'/g, "\\'")}', '${translationLanguage}', this)" title="Speak translation">🔊</button>
+    `;
 
     // Hide button options, hide feedback and buttons
     document.getElementById('exercise-options').style.display = 'none';
@@ -1352,6 +1984,8 @@ function hideLoading() {
 
 function showMainScreen() {
     showScreen('main-screen');
+    // Reset list practice mode
+    state.selectedListForPractice = null;
 }
 
 function showExerciseScreen() {
@@ -1389,6 +2023,9 @@ function switchTab(tabName) {
         loadWords();
     } else if (tabName === 'learned') {
         loadLearnedWords();
+    } else if (tabName === 'lists') {
+        state.lists = getAllListNames();
+        renderLists();
     } else if (tabName === 'stats') {
         loadStats();
     }
@@ -1410,8 +2047,15 @@ function hideFetchWordsModal() {
 }
 
 function showExerciseTypeModal() {
+    // Check if practicing a list or all words
+    let wordsToCheck = state.learningWords;
+    if (state.selectedListForPractice) {
+        const listWords = getWordsByList(state.selectedListForPractice);
+        wordsToCheck = listWords.learning;
+    }
+
     // Check if user has at least 10 words for matching exercise
-    const hasEnoughWords = state.learningWords.length >= 10;
+    const hasEnoughWords = wordsToCheck.length >= 10;
 
     if (!hasEnoughWords) {
         document.getElementById('matching-exercise-btn').disabled = true;
@@ -1448,6 +2092,233 @@ function showAddCustomWordModal() {
 
 function hideAddCustomWordModal() {
     document.getElementById('add-custom-word-modal').classList.add('hidden');
+}
+
+function showCreateListModal() {
+    const modal = document.getElementById('create-list-modal');
+    const input = document.getElementById('list-name-input');
+
+    input.value = '';
+    modal.classList.remove('hidden');
+    setTimeout(() => input.focus(), 100);
+}
+
+function hideCreateListModal() {
+    document.getElementById('create-list-modal').classList.add('hidden');
+}
+
+async function createListFromModal() {
+    const input = document.getElementById('list-name-input');
+    const listName = input.value.trim();
+
+    if (!listName) {
+        tg.showAlert('Please enter a list name');
+        return;
+    }
+
+    if (state.lists.includes(listName)) {
+        tg.showAlert('A list with this name already exists');
+        return;
+    }
+
+    // Just add to state - list will be created when first word is added
+    state.lists.push(listName);
+    state.lists.sort();
+
+    hideCreateListModal();
+    renderLists();
+    tg.showAlert(`List "${listName}" created!`);
+}
+
+function openManageListModal(listName) {
+    state.currentList = listName;
+
+    const modal = document.getElementById('manage-list-modal');
+    modal.classList.remove('hidden');
+
+    renderManageListModal(listName);
+}
+
+function hideManageListModal() {
+    document.getElementById('manage-list-modal').classList.add('hidden');
+    state.currentList = null;
+}
+
+async function addWordToListUI(wordId, listName) {
+    const success = await addWordToList(wordId, listName);
+
+    if (success) {
+        // Refresh modal view
+        renderManageListModal(listName);
+    } else {
+        tg.showAlert('Failed to add word to list');
+    }
+}
+
+async function removeWordFromListUI(wordId, listName) {
+    const success = await removeWordFromList(wordId, listName);
+
+    if (success) {
+        // Refresh modal view
+        renderManageListModal(listName);
+
+        // If list is now empty, remove it from state
+        const stats = getListStats(listName);
+        if (stats.total === 0) {
+            state.lists = state.lists.filter(l => l !== listName);
+            hideManageListModal();
+            renderLists();
+        }
+    } else {
+        tg.showAlert('Failed to remove word from list');
+    }
+}
+
+async function renameListUI() {
+    if (!state.currentList) return;
+
+    const newName = prompt(`Enter new name for list "${state.currentList}":`, state.currentList);
+
+    if (!newName || newName.trim() === '') {
+        return;
+    }
+
+    const trimmedName = newName.trim();
+
+    if (trimmedName === state.currentList) {
+        return;
+    }
+
+    if (state.lists.includes(trimmedName)) {
+        tg.showAlert('A list with this name already exists');
+        return;
+    }
+
+    const success = await renameList(state.currentList, trimmedName);
+
+    if (success) {
+        tg.showAlert(`List renamed to "${trimmedName}"`);
+        state.currentList = trimmedName;
+        hideManageListModal();
+        renderLists();
+    } else {
+        tg.showAlert('Failed to rename list');
+    }
+}
+
+async function deleteListUI() {
+    if (!state.currentList) return;
+
+    const confirmed = confirm(`Are you sure you want to delete the list "${state.currentList}"? Words will not be deleted, only removed from this list.`);
+
+    if (!confirmed) return;
+
+    const success = await deleteList(state.currentList);
+
+    if (success) {
+        tg.showAlert('List deleted');
+        hideManageListModal();
+        renderLists();
+    } else {
+        tg.showAlert('Failed to delete list');
+    }
+}
+
+function practiceListUI() {
+    if (!state.currentList) return;
+
+    const stats = getListStats(state.currentList);
+
+    if (stats.total === 0) {
+        tg.showAlert('This list has no words');
+        return;
+    }
+
+    state.selectedListForPractice = state.currentList;
+    hideManageListModal();
+    showExerciseTypeModal();
+}
+
+function showEditWordModal(wordId) {
+    // Find word in learning or learned
+    let word = state.learningWords.find(w => w.id === wordId);
+    if (!word) {
+        word = state.learnedWords.find(w => w.id === wordId);
+    }
+
+    if (!word) {
+        console.error('Word not found:', wordId);
+        return;
+    }
+
+    // Populate form
+    document.getElementById('edit-word-greek').value = word.greek;
+    document.getElementById('edit-word-russian').value = word.russian;
+    document.getElementById('edit-word-type').value = word.word_type || '';
+    document.getElementById('edit-word-error').classList.add('hidden');
+
+    // Store word ID in modal for later use
+    const modal = document.getElementById('edit-word-modal');
+    modal.dataset.wordId = wordId;
+    modal.classList.remove('hidden');
+
+    // Focus first input
+    setTimeout(() => document.getElementById('edit-word-greek').focus(), 100);
+}
+
+function hideEditWordModal() {
+    const modal = document.getElementById('edit-word-modal');
+    modal.classList.add('hidden');
+    delete modal.dataset.wordId;
+}
+
+async function saveEditedWord() {
+    const modal = document.getElementById('edit-word-modal');
+    const wordId = modal.dataset.wordId;
+
+    if (!wordId) {
+        console.error('No word ID in modal');
+        return;
+    }
+
+    const greek = document.getElementById('edit-word-greek').value.trim();
+    const russian = document.getElementById('edit-word-russian').value.trim();
+    const wordType = document.getElementById('edit-word-type').value;
+    const errorEl = document.getElementById('edit-word-error');
+
+    // Validate
+    if (!greek || !russian) {
+        errorEl.textContent = 'Both Greek and Russian fields are required';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+
+    try {
+        // Update word
+        const updates = {
+            greek: greek,
+            russian: russian,
+            word_type: wordType
+        };
+
+        await editWord(wordId, updates);
+
+        // Reload words
+        await loadWords();
+        await loadLearnedWords();
+
+        // Update lists if on lists tab
+        if (state.currentList) {
+            renderManageListModal(state.currentList);
+        }
+
+        hideEditWordModal();
+        tg.showAlert('Word updated successfully!');
+    } catch (error) {
+        console.error('Error saving word:', error);
+        errorEl.textContent = error.message || 'Failed to save word';
+        errorEl.classList.remove('hidden');
+    }
 }
 
 // ========== Event Listeners ==========
@@ -1546,6 +2417,85 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Search inputs
+    const learningSearchInput = document.getElementById('learning-search-input');
+    if (learningSearchInput) {
+        learningSearchInput.addEventListener('input', (e) => {
+            state.searchQueries.learning = e.target.value;
+            renderLearningWords();
+        });
+    }
+
+    const learnedSearchInput = document.getElementById('learned-search-input');
+    if (learnedSearchInput) {
+        learnedSearchInput.addEventListener('input', (e) => {
+            state.searchQueries.learned = e.target.value;
+            renderLearnedWords();
+        });
+    }
+
+    // Lists management
+    document.getElementById('create-list-btn').addEventListener('click', showCreateListModal);
+
+    document.getElementById('create-list-cancel-btn').addEventListener('click', hideCreateListModal);
+
+    document.getElementById('create-list-confirm-btn').addEventListener('click', createListFromModal);
+
+    document.getElementById('list-name-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            createListFromModal();
+        }
+    });
+
+    document.getElementById('manage-list-close').addEventListener('click', hideManageListModal);
+
+    document.getElementById('manage-list-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'manage-list-modal') {
+            hideManageListModal();
+        }
+    });
+
+    document.getElementById('rename-list-btn').addEventListener('click', renameListUI);
+
+    document.getElementById('delete-list-btn').addEventListener('click', deleteListUI);
+
+    document.getElementById('practice-list-btn').addEventListener('click', practiceListUI);
+
+    document.getElementById('create-list-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'create-list-modal') {
+            hideCreateListModal();
+        }
+    });
+
+    const addToListSearch = document.getElementById('add-to-list-search');
+    if (addToListSearch) {
+        addToListSearch.addEventListener('input', (e) => {
+            if (state.currentList) {
+                renderAvailableWordsForList(state.currentList, e.target.value);
+            }
+        });
+    }
+
+    // Edit word modal
+    document.getElementById('edit-word-cancel-btn').addEventListener('click', hideEditWordModal);
+
+    document.getElementById('edit-word-save-btn').addEventListener('click', saveEditedWord);
+
+    document.getElementById('edit-word-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'edit-word-modal') {
+            hideEditWordModal();
+        }
+    });
+
+    // Allow Enter to save in edit modal
+    ['edit-word-greek', 'edit-word-russian'].forEach(inputId => {
+        document.getElementById(inputId).addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                saveEditedWord();
+            }
+        });
+    });
+
     // Exercise type modal
     document.getElementById('sentence-exercise-btn').addEventListener('click', () => {
         hideExerciseTypeModal();
@@ -1573,6 +2523,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (state.learningWords.length > 0) {
                 e.preventDefault();
                 e.stopPropagation();
+                // Reset list practice mode when practicing from main screen
+                state.selectedListForPractice = null;
                 showExerciseTypeModal();
             }
         }
@@ -1698,3 +2650,8 @@ window.deleteWord = deleteWord;
 window.markWordAsLearned = markWordAsLearned;
 window.moveToLearning = moveToLearning;
 window.handleOptionClick = handleOptionClick;
+window.openManageListModal = openManageListModal;
+window.addWordToListUI = addWordToListUI;
+window.removeWordFromListUI = removeWordFromListUI;
+window.showEditWordModal = showEditWordModal;
+window.playSpeech = playSpeech;

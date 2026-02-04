@@ -24,9 +24,11 @@ docker run -d \
     -v $(pwd)/greek_learned:/app/greek_learned \
     -v $(pwd)/greek_stats:/app/greek_stats \
     -v $(pwd)/greek_word_forms:/app/greek_word_forms \
+    -v $(pwd)/greek_audio_cache:/app/greek_audio_cache \
     -v $(pwd)/memory:/app/memory \
     -v $(pwd)/config.json:/app/config.json \
     -v $(pwd)/log.txt:/app/log.txt \
+    -p 8180:8180 \
     gptchat_bot
 
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/memory
@@ -38,3 +40,4 @@ docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_words
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_learned
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_stats
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_word_forms
+docker exec -u 0 gptchat_bot chown 1000:1000 /greek_audio_cache
