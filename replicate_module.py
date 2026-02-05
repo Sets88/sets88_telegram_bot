@@ -194,7 +194,21 @@ REPLICATE_MODELS = {
         'replicate_id': 'minimax/speech-02-turbo',
         'input_type': 'text',
         'input_field': 'text',
-        'output_type': 'audio'
+        'output_type': 'audio',
+        'available_params': {
+            'speed': {
+                'type': 'float',
+                'default': 1.0,
+                'min': 0.5,
+                'max': 2.0,
+                'description': 'Speech speed multiplier'
+            },
+            'emotion': {
+                'type': 'select',
+                'options': ['neutral', 'happy', 'sad', 'angry'],
+                'description': 'Emotion of the speech'
+            }
+        }
     }
 }
 

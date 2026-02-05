@@ -1289,6 +1289,8 @@ Respond ONLY with the JSON object, no additional text."""
             # Prepare input for speech model
             input_data = {
                 'text': text,
+                'speed': 0.8,
+                'emotion': 'neutral'
             }
 
             logger.info(f"Generating speech for text: {text[:50]}... (language: {language}, is_word: {is_word})")
