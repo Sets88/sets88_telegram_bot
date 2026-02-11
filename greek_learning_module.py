@@ -149,6 +149,7 @@ class GreekWebApp:
             "script-src 'self' 'unsafe-inline' https://telegram.org; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
+            "media-src 'self' blob: https:; "
             "connect-src 'self' https:; "
             "frame-ancestors 'none'"
         )
