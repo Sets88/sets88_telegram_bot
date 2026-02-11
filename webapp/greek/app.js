@@ -720,14 +720,7 @@ async function speakText(text, language = 'auto') {
         });
 
         if (!response.ok) {
-            let errorMsg = `HTTP ${response.status}`;
-            try {
-                const errorData = await response.json();
-                errorMsg += ': ' + (errorData.error || response.statusText);
-            } catch (e) {
-                errorMsg += ': ' + response.statusText;
-            }
-            throw new Error(errorMsg);
+            throw new Error(`HTTP error ${response.status}`);
         }
 
         // Check content type to determine response type
@@ -736,35 +729,16 @@ async function speakText(text, language = 'auto') {
         if (contentType && contentType.includes('audio/mpeg')) {
             // Response is audio file (blob) - for words
             const blob = await response.blob();
-            if (blob.size === 0) {
-                throw new Error('Empty audio file received');
-            }
             return { type: 'blob', data: blob };
         } else {
             // Response is JSON with URL - for sentences
             const json = await response.json();
-            if (!json.audio_url) {
-                throw new Error('No audio URL in response');
-            }
             return { type: 'url', data: json.audio_url };
         }
     } catch (error) {
-        throw new Error('API error: ' + error.message);
+        console.error('Error generating speech:', error);
+        throw error;
     }
-}
-
-// Initialize Audio Context on first user interaction
-let audioContext = null;
-
-function initAudioContext() {
-    if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    // Resume context if suspended (required on mobile)
-    if (audioContext.state === 'suspended') {
-        audioContext.resume();
-    }
-    return audioContext;
 }
 
 async function playSpeech(text, language = 'auto', buttonElement = null) {
@@ -775,52 +749,60 @@ async function playSpeech(text, language = 'auto', buttonElement = null) {
             buttonElement.classList.add('loading');
         }
 
-        // Initialize audio context
-        const ctx = initAudioContext();
-
         // Request speech audio
         const result = await speakText(text, language);
 
-        let audioData;
+        let audioUrl;
+        let needsCleanup = false;
+
         if (result.type === 'blob') {
-            // Convert blob to array buffer
-            audioData = await result.data.arrayBuffer();
+            // Create object URL from blob (words)
+            audioUrl = URL.createObjectURL(result.data);
+            needsCleanup = true;
         } else if (result.type === 'url') {
-            // Fetch audio from URL
-            const response = await fetch(result.data);
-            if (!response.ok) {
-                throw new Error('Failed to fetch audio: ' + response.status);
-            }
-            audioData = await response.arrayBuffer();
+            // Use remote URL directly (sentences)
+            audioUrl = result.data;
+            needsCleanup = false;
         } else {
-            throw new Error('Unknown audio result type: ' + result.type);
+            throw new Error('Unknown audio result type');
         }
 
-        // Decode audio data
-        const audioBuffer = await ctx.decodeAudioData(audioData);
+        // Create and play audio
+        const audio = new Audio(audioUrl);
 
-        // Create and play audio source
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-
-        // Re-enable button when audio ends
-        source.onended = () => {
+        audio.onended = () => {
+            // Re-enable button when audio finishes
             if (buttonElement) {
                 buttonElement.disabled = false;
                 buttonElement.classList.remove('loading');
             }
+            // Clean up object URL if needed
+            if (needsCleanup) {
+                URL.revokeObjectURL(audioUrl);
+            }
         };
 
-        // Start playback
-        source.start(0);
+        audio.onerror = (error) => {
+            console.error('Error playing audio:', error);
+            if (buttonElement) {
+                buttonElement.disabled = false;
+                buttonElement.classList.remove('loading');
+            }
+            // Clean up object URL if needed
+            if (needsCleanup) {
+                URL.revokeObjectURL(audioUrl);
+            }
+            tg.showAlert('Failed to play audio');
+        };
 
+        await audio.play();
     } catch (error) {
+        console.error('Error playing speech:', error);
         if (buttonElement) {
             buttonElement.disabled = false;
             buttonElement.classList.remove('loading');
         }
-        tg.showAlert('Speech error: ' + error.message);
+        tg.showAlert('Failed to generate speech');
     }
 }
 
