@@ -2718,22 +2718,7 @@ async function initApp() {
         </div>
     `;
 
-    // Update loading screen with status
-    function updateLoadingStatus(message) {
-        const loadingScreen = document.getElementById('loading-screen');
-        let statusDiv = loadingScreen.querySelector('.loading-status');
-        if (!statusDiv) {
-            statusDiv = document.createElement('div');
-            statusDiv.className = 'loading-status';
-            statusDiv.style.cssText = 'margin-top: 20px; padding: 10px; background: rgba(255,255,255,0.9); border-radius: 5px; font-size: 14px;';
-            loadingScreen.appendChild(statusDiv);
-        }
-        statusDiv.innerHTML = message;
-        console.log('[INIT]', message);
-    }
-
     showLoading();
-    updateLoadingStatus('Step 1/4: Checking API...');
 
     // Check API health first
     try {
@@ -2742,7 +2727,6 @@ async function initApp() {
         const health = await healthResponse.json();
         console.log('API Health:', health);
         debugInfo += `<div style="background: #e0ffe0; padding: 10px; margin: 10px; border-radius: 5px; font-size: 12px;">API Health: ✓</div>`;
-        updateLoadingStatus('Step 1/4: API OK ✓<br>Step 2/4: Checking Telegram...');
     } catch (error) {
         console.error('API health check failed:', error);
         hideLoading();
@@ -2752,13 +2736,11 @@ async function initApp() {
                 <div class="empty-state-icon">🔌</div>
                 <div class="empty-state-text">
                     Cannot connect to API server.<br>
-                    Error: ${error.message}<br>
-                    URL: ${window.location.origin}/greek/api/health
+                    Error: ${error.message}
                 </div>
                 <button onclick="initApp()" class="btn btn-primary mt-20">Retry</button>
             </div>
         `;
-        document.getElementById('main-screen').classList.add('active');
         return;
     }
 
@@ -2793,30 +2775,26 @@ async function initApp() {
                 <button onclick="initApp()" class="btn btn-primary mt-20">Retry</button>
             </div>
         `;
-        document.getElementById('main-screen').classList.add('active');
         return;
     }
-
-    updateLoadingStatus('Step 2/4: Telegram OK ✓<br>Step 3/4: Loading data...');
 
     try {
         console.log('Loading initial data...');
         await Promise.all([
             loadWords().catch(e => {
                 console.error('Failed to load words:', e);
-                throw new Error('Failed to load words: ' + e.message);
+                return null;
             }),
             loadLearnedWords().catch(e => {
                 console.error('Failed to load learned words:', e);
-                throw new Error('Failed to load learned: ' + e.message);
+                return null;
             }),
             loadStats().catch(e => {
                 console.error('Failed to load stats:', e);
-                throw new Error('Failed to load stats: ' + e.message);
+                return null;
             })
         ]);
 
-        updateLoadingStatus('Step 3/4: Data loaded ✓<br>Step 4/4: Finalizing...');
         console.log('App initialized successfully');
         hideLoading();
 
@@ -2824,20 +2802,17 @@ async function initApp() {
         console.error('Error initializing app:', error);
         hideLoading();
 
-        // Show error message in UI with debug info
+        // Show error message in UI
         document.getElementById('main-screen').innerHTML = `
-            ${debugInfo}
             <div class="empty-state">
                 <div class="empty-state-icon">❌</div>
                 <div class="empty-state-text">
-                    <strong>Failed to load app</strong><br><br>
-                    Error: ${error.message}<br><br>
-                    <small>Check the debug info above for details.</small>
+                    Failed to load app: ${error.message}<br>
+                    Please check console for details.
                 </div>
                 <button onclick="initApp()" class="btn btn-primary mt-20">Retry</button>
             </div>
         `;
-        document.getElementById('main-screen').classList.add('active');
 
         if (tg?.showAlert) {
             tg.showAlert('Failed to initialize app: ' + error.message);
