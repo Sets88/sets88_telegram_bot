@@ -4,18 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Greek Learning</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        // Debug: Check if Telegram SDK loads
+        // Debug: Check if Telegram SDK loads (with delay to allow SDK to initialize)
         window.addEventListener('DOMContentLoaded', function() {
-            console.log('[DEBUG] DOM loaded');
-            console.log('[DEBUG] Telegram object:', window.Telegram);
-            if (!window.Telegram) {
-                console.error('[ERROR] Telegram SDK not loaded!');
-                document.body.innerHTML = '<div style="padding: 20px; background: #fee; color: #c00; font-family: sans-serif;">ERROR: Telegram SDK failed to load. This may be due to network issues or script blocking.</div>' + document.body.innerHTML;
-            }
+            setTimeout(function() {
+                console.log('[DEBUG] DOM loaded');
+                console.log('[DEBUG] Telegram object:', window.Telegram);
+                console.log('[DEBUG] User Agent:', navigator.userAgent);
+                if (!window.Telegram) {
+                    console.error('[ERROR] Telegram SDK not loaded after 1 second!');
+                    var errorDiv = document.createElement('div');
+                    errorDiv.style.cssText = 'padding: 20px; background: #fee; color: #c00; font-family: sans-serif; margin: 10px; border-radius: 5px;';
+                    errorDiv.innerHTML = '<strong>ERROR: Telegram SDK failed to load.</strong><br><br>' +
+                        'This may be due to:<br>' +
+                        '• Network issues or slow connection<br>' +
+                        '• Script blocking by browser or firewall<br>' +
+                        '• Access restrictions to telegram.org<br><br>' +
+                        '<small>User Agent: ' + navigator.userAgent.substring(0, 100) + '</small>';
+                    document.body.insertBefore(errorDiv, document.body.firstChild);
+                } else {
+                    console.log('[DEBUG] Telegram SDK loaded successfully!');
+                }
+            }, 1000); // Wait 1 second for SDK to load
         });
     </script>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>

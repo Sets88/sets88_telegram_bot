@@ -150,12 +150,13 @@ class GreekWebApp:
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "connect-src 'self' https:; "
-            "frame-ancestors 'none'"
+            "frame-ancestors https://web.telegram.org https://telegram.org https://t.me"
         )
 
         # Additional security headers
         response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Frame-Options'] = 'DENY'
+        # Don't set X-Frame-Options as it conflicts with frame-ancestors and Telegram WebApp needs to load in iframe
+        # response.headers['X-Frame-Options'] = 'DENY'
 
         return response
 
