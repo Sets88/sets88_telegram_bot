@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Greek Learning</title>
+    <script>
+        // Debug: Check if Telegram SDK loads
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('[DEBUG] DOM loaded');
+            console.log('[DEBUG] Telegram object:', window.Telegram);
+            if (!window.Telegram) {
+                console.error('[ERROR] Telegram SDK not loaded!');
+                document.body.innerHTML = '<div style="padding: 20px; background: #fee; color: #c00; font-family: sans-serif;">ERROR: Telegram SDK failed to load. This may be due to network issues or script blocking.</div>' + document.body.innerHTML;
+            }
+        });
+    </script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>

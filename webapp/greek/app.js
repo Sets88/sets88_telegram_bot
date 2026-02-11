@@ -2703,6 +2703,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initApp() {
     console.log('=== Initializing Greek Learning App ===');
+
+    // Create debug info panel
+    let debugInfo = `
+        <div style="background: #f0f0f0; padding: 10px; margin: 10px; border-radius: 5px; font-size: 12px; text-align: left;">
+            <strong>Debug Info:</strong><br>
+            Telegram: ${window.Telegram ? '✓' : '✗'}<br>
+            WebApp: ${tg ? '✓' : '✗'}<br>
+            initData: ${tg?.initData ? '✓ (length: ' + tg.initData.length + ')' : '✗'}<br>
+            Platform: ${tg?.platform || 'unknown'}<br>
+            Version: ${tg?.version || 'unknown'}<br>
+            User Agent: ${navigator.userAgent.substring(0, 50)}...<br>
+            Current URL: ${window.location.href}<br>
+        </div>
+    `;
+
     showLoading();
 
     // Check API health first
@@ -2711,15 +2726,17 @@ async function initApp() {
         const healthResponse = await fetch('/greek/api/health');
         const health = await healthResponse.json();
         console.log('API Health:', health);
+        debugInfo += `<div style="background: #e0ffe0; padding: 10px; margin: 10px; border-radius: 5px; font-size: 12px;">API Health: ✓</div>`;
     } catch (error) {
         console.error('API health check failed:', error);
         hideLoading();
         document.getElementById('main-screen').innerHTML = `
+            ${debugInfo}
             <div class="empty-state">
                 <div class="empty-state-icon">🔌</div>
                 <div class="empty-state-text">
                     Cannot connect to API server.<br>
-                    Please make sure the server is running.
+                    Error: ${error.message}
                 </div>
                 <button onclick="initApp()" class="btn btn-primary mt-20">Retry</button>
             </div>
@@ -2730,14 +2747,32 @@ async function initApp() {
     // Check if Telegram WebApp is available
     if (!tg || !tg.initData) {
         console.error('Telegram WebApp not available or initData missing');
+        console.error('tg:', tg);
+        console.error('tg?.initData:', tg?.initData);
+        console.error('window.Telegram:', window.Telegram);
+
         hideLoading();
+
+        // Show detailed diagnostic info
+        let diagnosticInfo = '';
+        if (!window.Telegram) {
+            diagnosticInfo = 'Telegram object not found - SDK script may not have loaded';
+        } else if (!tg) {
+            diagnosticInfo = 'Telegram.WebApp not initialized';
+        } else if (!tg.initData) {
+            diagnosticInfo = 'initData is empty - app may not have been opened from Telegram bot button';
+        }
+
         document.getElementById('main-screen').innerHTML = `
-            <div class="empty-state">
+            ${debugInfo}
+            <div class="empty-state" style="margin-top: 20px;">
                 <div class="empty-state-icon">⚠️</div>
                 <div class="empty-state-text">
-                    This app must be opened from Telegram.<br>
-                    Please use the bot to open the Web App.
+                    <strong>This app must be opened from Telegram.</strong><br><br>
+                    Problem: <span style="color: red;">${diagnosticInfo}</span><br><br>
+                    <small>Please open this app using the button in the Telegram bot, not by typing the URL directly.</small>
                 </div>
+                <button onclick="initApp()" class="btn btn-primary mt-20">Retry</button>
             </div>
         `;
         return;
