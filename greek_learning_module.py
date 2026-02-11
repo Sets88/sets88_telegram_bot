@@ -678,10 +678,23 @@ class GreekWebApp:
                 word_type=word_type
             )
 
+            # Extract lemma from first form (if available)
+            lemma = greek_word  # fallback to input word
+            lemma_russian = russian_word  # fallback to input translation
+
+            if forms and len(forms) > 0:
+                first_form = forms[0]
+                # Check if first form is labeled as lemma/base form
+                if 'Lemma' in first_form.get('label', '') or 'Base form' in first_form.get('label', ''):
+                    lemma = first_form.get('greek', greek_word)
+                    lemma_russian = first_form.get('russian', russian_word)
+
             return web.json_response({
                 'greek': greek_word,
                 'russian': russian_word,
                 'word_type': word_type,
+                'lemma': lemma,
+                'lemma_russian': lemma_russian,
                 'forms': forms
             })
 

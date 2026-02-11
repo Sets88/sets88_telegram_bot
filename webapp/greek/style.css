@@ -272,6 +272,7 @@ h2 {
 
 .exercise-content {
     text-align: center;
+    padding-bottom: 250px; /* Space for fixed bottom result panel */
 }
 
 .question {
@@ -411,6 +412,98 @@ h2 {
 
 .feedback.hidden {
     display: none;
+}
+
+/* Fixed Bottom Result Panel */
+.exercise-result-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--tg-theme-bg-color, #ffffff);
+    border-top: 1px solid var(--tg-theme-hint-color, #e0e0e0);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    transform: translateY(100%);
+    transition: transform 0.3s ease-out;
+}
+
+.exercise-result-panel:not(.hidden) {
+    transform: translateY(0);
+}
+
+.exercise-result-panel.hidden {
+    transform: translateY(100%);
+}
+
+.result-panel-content {
+    padding: 16px;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.result-word-info {
+    margin-bottom: 12px;
+    padding: 12px;
+    background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+    border-radius: 8px;
+    font-size: 16px;
+}
+
+.result-word-info .word-pair {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.result-word-info .word-greek {
+    font-weight: 600;
+    color: var(--tg-theme-text-color, #000);
+    font-size: 18px;
+}
+
+.result-word-info .word-separator {
+    color: var(--tg-theme-hint-color, #999);
+    font-size: 16px;
+}
+
+.result-word-info .word-russian {
+    color: var(--tg-theme-hint-color, #666);
+    font-size: 16px;
+}
+
+.result-feedback {
+    margin-bottom: 16px;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 15px;
+    line-height: 1.4;
+}
+
+.result-feedback.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.result-feedback.error {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.result-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.result-actions .btn {
+    flex: 1;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
 }
 
 /* Stats */
@@ -843,6 +936,19 @@ h2 {
 .word-form-russian {
     font-size: 14px;
     color: var(--tg-theme-hint-color, #757575);
+}
+
+/* Container for Greek text with audio button */
+.word-form-greek-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.word-form-greek-container .btn-speak-small {
+    flex-shrink: 0;
+    margin-left: 4px;
 }
 
 /* Make word cards touchable */

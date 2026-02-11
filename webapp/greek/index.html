@@ -94,11 +94,18 @@
                 <div id="exercise-translation" class="translation"></div>
 
                 <div id="exercise-options" class="options"></div>
+            </div>
 
-                <div id="exercise-feedback" class="feedback hidden"></div>
-
-                <button id="mark-learned-btn" class="btn btn-success hidden">Mark as Learned</button>
-                <button id="next-exercise-btn" class="btn btn-primary hidden">Next</button>
+            <!-- Fixed Bottom Result Panel -->
+            <div id="exercise-result-panel" class="exercise-result-panel hidden">
+                <div class="result-panel-content">
+                    <div id="result-word-info" class="result-word-info"></div>
+                    <div id="result-feedback" class="result-feedback"></div>
+                    <div class="result-actions">
+                        <button id="result-mark-learned-btn" class="btn btn-success">Изучено</button>
+                        <button id="result-next-btn" class="btn btn-primary">Далее</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -215,6 +222,13 @@
                     <div class="word-detail-section">
                         <div class="word-detail-label">Type:</div>
                         <div class="word-detail-value" id="word-details-type"></div>
+                    </div>
+
+                    <!-- Add to Learning Button (shown only for words not in list) -->
+                    <div id="word-details-add-button-section" class="word-detail-section hidden">
+                        <button id="word-details-add-button" class="btn-primary" style="width: 100%; padding: 12px; margin-top: 8px;">
+                            ➕ Добавить в изучаемые
+                        </button>
                     </div>
 
                     <div id="word-forms-section" class="word-detail-section hidden">

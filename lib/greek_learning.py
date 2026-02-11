@@ -822,7 +822,7 @@ Respond ONLY with the JSON object, no additional text."""
 
         if direction == ExerciseDirection.GREEK_TO_RUSSIAN:
             # Generate Greek sentence, ask to find Russian translation
-            russian_word = choice([x.strip() for x in word.russian.split(',') if x.strip()])
+            russian_word = choice([x.strip() for x in re.split('[,/]', word.russian) if x.strip()])
             prompt = f"""Generate a Greek sentence at A2 level using the word "{word.greek}" (meaning in Russian: {russian_word}).
 
 Requirements:
@@ -844,7 +844,7 @@ Respond ONLY with the JSON object, no additional text."""
 
         else:  # RUSSIAN_TO_GREEK
             # Generate Russian sentence, ask to find Greek translation
-            russian_word = choice([x.strip() for x in word.russian.split(',') if x.strip()])
+            russian_word = choice([x.strip() for x in re.split('[,/]', word.russian) if x.strip()])
             prompt = f"""Generate a Russian sentence at A2 level using the word "{russian_word}" (Greek translation: {word.greek})
 
 Requirements:
@@ -938,24 +938,43 @@ Respond ONLY with the JSON object, no additional text."""
         if word_type.lower() == 'unknown' or not word_type:
             prompt = f"""Analyze the Greek word "{greek_word}" and provide its grammatical forms with Russian translations.
 
-First, determine what type of word it is (noun, verb, adjective, etc.).
-Then, generate all relevant forms based on the word type:
+IMPORTANT: The word "{greek_word}" may be in ANY form (inflected, conjugated, etc.). You must:
+1. Identify the BASE FORM (lemma) of this word
+2. Determine what type of word it is (noun, verb, adjective, etc.)
+3. Generate all relevant forms based on the word type
+
+Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
+[
+  {{"label": "Lemma", "greek": "base_form_here", "russian": "base form translation"}},
+  {{"label": "Word type", "greek": "base_form_here", "russian": "type in Russian (существительное/глагол/прилагательное)"}},
+  {{"label": "Form description", "greek": "form", "russian": "translation"}},
+  ...
+]
+
+For example, if input is "έκανα" (past tense), first element should be lemma "κάνω".
+Generate all relevant forms:
 - For verbs: present, past/aorist, future tenses; 1st, 2nd, 3rd person; singular and plural
 - For nouns: nominative, genitive, accusative cases; singular and plural
 - For adjectives: masculine, feminine, neuter; singular and plural
 - Modern Greek words (avoid archaic/ancient terms)
-Format as a valid JSON array:
-[
-  {{"label": "Word type", "greek": "{greek_word}", "russian": "type in Russian (существительное/глагол/прилагательное)"}},
-  {{"label": "Form description", "greek": "form", "russian": "translation"}},
-  ...
-]
 
 Respond ONLY with the JSON array, no additional text."""
 
         # Build prompt based on word type
         elif word_type.lower() == 'verb':
             prompt = f"""Generate all common forms of the Greek verb "{greek_word}" (Russian: {russian_word}) with Russian translations.
+
+IMPORTANT: The word "{greek_word}" may be in ANY form (conjugated). You must:
+1. Identify the BASE FORM (lemma/infinitive) - typically 1st person singular present
+2. Generate all common forms
+
+Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
+[
+  {{"label": "Lemma (1st person singular present)", "greek": "base_form", "russian": "base translation"}},
+  {{"label": "Present 1st person singular (εγώ)", "greek": "form", "russian": "translation"}},
+  {{"label": "Present 2nd person singular (εσύ)", "greek": "form", "russian": "translation"}},
+  ...
+]
 
 Include the following forms:
 1. Present tense: 1st, 2nd, 3rd person singular and plural
@@ -965,17 +984,22 @@ Include the following forms:
 5. Participles (if applicable)
 6. Modern Greek forms (avoid archaic/ancient terms)
 
-Format as a valid JSON array:
-[
-  {{"label": "Present 1st person singular (εγώ)", "greek": "form", "russian": "translation"}},
-  {{"label": "Present 2nd person singular (εσύ)", "greek": "form", "russian": "translation"}},
-  ...
-]
-
 Respond ONLY with the JSON array, no additional text."""
 
         elif word_type.lower() == 'noun':
             prompt = f"""Generate all forms of the Greek noun "{greek_word}" (Russian: {russian_word}) with Russian translations.
+
+IMPORTANT: The word "{greek_word}" may be in ANY form (case, number). You must:
+1. Identify the BASE FORM (lemma) - typically nominative singular
+2. Generate all forms
+
+Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
+[
+  {{"label": "Lemma (Nominative singular)", "greek": "base_form", "russian": "base translation"}},
+  {{"label": "Nominative singular", "greek": "form", "russian": "translation"}},
+  {{"label": "Nominative plural", "greek": "form", "russian": "translation"}},
+  ...
+]
 
 Include the following forms:
 1. Nominative singular and plural
@@ -984,30 +1008,28 @@ Include the following forms:
 4. Vocative (if different)
 5. Modern Greek forms (avoid archaic/ancient terms)
 
-Format as a valid JSON array:
-[
-  {{"label": "Nominative singular", "greek": "form", "russian": "translation"}},
-  {{"label": "Nominative plural", "greek": "form", "russian": "translation"}},
-  ...
-]
-
 Respond ONLY with the JSON array, no additional text."""
 
         elif word_type.lower() == 'adjective':
             prompt = f"""Generate all forms of the Greek adjective "{greek_word}" (Russian: {russian_word}) with Russian translations.
+
+IMPORTANT: The word "{greek_word}" may be in ANY form (gender, case, number). You must:
+1. Identify the BASE FORM (lemma) - typically masculine nominative singular
+2. Generate all forms
+
+Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
+[
+  {{"label": "Lemma (Masculine nominative singular)", "greek": "base_form", "russian": "base translation"}},
+  {{"label": "Masculine singular", "greek": "form", "russian": "translation"}},
+  {{"label": "Feminine singular", "greek": "form", "russian": "translation"}},
+  ...
+]
 
 Include the following forms:
 1. Masculine, feminine, neuter forms
 2. Singular and plural for each gender
 3. Different cases if applicable (nominative, genitive, accusative)
 4. Modern Greek forms (avoid archaic/ancient terms)
-
-Format as a valid JSON array:
-[
-  {{"label": "Masculine singular", "greek": "form", "russian": "translation"}},
-  {{"label": "Feminine singular", "greek": "form", "russian": "translation"}},
-  ...
-]
 
 Respond ONLY with the JSON array, no additional text."""
 

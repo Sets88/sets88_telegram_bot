@@ -974,6 +974,9 @@ async function showWordDetailsModal(wordId) {
     document.getElementById('word-details-russian').textContent = word.russian;
     document.getElementById('word-details-type').textContent = word.word_type || 'unknown';
 
+    // Hide "Add to Learning" button (word is already in list)
+    document.getElementById('word-details-add-button-section').classList.add('hidden');
+
     // Show loading
     loading.classList.remove('hidden');
     content.style.opacity = '0.5';
@@ -997,7 +1000,10 @@ async function showWordDetailsModal(wordId) {
                 <div class="word-form-item">
                     <div class="word-form-label">${form.label}:</div>
                     <div class="word-form-value">
-                        <span class="word-form-greek">${form.greek}</span>
+                        <div class="word-form-greek-container">
+                            <span class="word-form-greek">${form.greek}</span>
+                            ${form.greek ? `<button class="btn-speak-small" onclick="playSpeech('${form.greek.replace(/'/g, "\\'")}', 'greek', this)" title="Произнести">🔊</button>` : ''}
+                        </div>
                         <span class="word-form-russian">${form.russian}</span>
                     </div>
                 </div>
@@ -1086,12 +1092,23 @@ async function showWordDetailsModalForRussianWord(russianWord) {
         document.getElementById('word-details-type').textContent = translation.word_type || 'unknown';
         document.getElementById('word-details-title').innerHTML = '🔍 Word Forms <span style="font-size: 12px; font-weight: normal; color: #999;">(translated from Russian)</span>';
 
+        // Show "Add to Learning" button
+        const addButtonSection = document.getElementById('word-details-add-button-section');
+        const addButton = document.getElementById('word-details-add-button');
+        addButtonSection.classList.remove('hidden');
+        // Temporarily use translation.greek, will update after fetching forms
+        addButton.onclick = () => addWordFromDetails(translation.greek);
+
         // Now fetch word forms for the Greek word
         const details = await getWordFormsByText(translation.greek, russianWord, translation.word_type);
 
         // Hide loading
         loading.classList.add('hidden');
         content.style.opacity = '1';
+
+        // Update button to use lemma (base form) from word forms
+        const lemmaToAdd = details.lemma || translation.greek;
+        addButton.onclick = () => addWordFromDetails(lemmaToAdd);
 
         // Display word forms
         if (details.forms && details.forms.length > 0) {
@@ -1109,7 +1126,10 @@ async function showWordDetailsModalForRussianWord(russianWord) {
                 <div class="word-form-item">
                     <div class="word-form-label">${form.label}:</div>
                     <div class="word-form-value">
-                        <span class="word-form-greek">${form.greek}</span>
+                        <div class="word-form-greek-container">
+                            <span class="word-form-greek">${form.greek}</span>
+                            ${form.greek ? `<button class="btn-speak-small" onclick="playSpeech('${form.greek.replace(/'/g, "\\'")}', 'greek', this)" title="Произнести">🔊</button>` : ''}
+                        </div>
                         <span class="word-form-russian">${form.russian}</span>
                     </div>
                 </div>
@@ -1139,6 +1159,13 @@ async function showWordDetailsModalForArbitraryWord(greekWord) {
     document.getElementById('word-details-russian').textContent = '(analyzing...)';
     document.getElementById('word-details-type').textContent = 'analyzing...';
 
+    // Show "Add to Learning" button
+    const addButtonSection = document.getElementById('word-details-add-button-section');
+    const addButton = document.getElementById('word-details-add-button');
+    addButtonSection.classList.remove('hidden');
+    // Temporarily use greekWord, will update after fetching forms
+    addButton.onclick = () => addWordFromDetails(greekWord);
+
     // Show loading
     loading.classList.remove('hidden');
     content.style.opacity = '0.5';
@@ -1150,6 +1177,10 @@ async function showWordDetailsModalForArbitraryWord(greekWord) {
         // Hide loading
         loading.classList.add('hidden');
         content.style.opacity = '1';
+
+        // Update button to use lemma (base form) instead of input word
+        const lemmaToAdd = details.lemma || greekWord;
+        addButton.onclick = () => addWordFromDetails(lemmaToAdd);
 
         // Update info with results
         let wordTypeDisplay = details.word_type || 'unknown';
@@ -1180,7 +1211,10 @@ async function showWordDetailsModalForArbitraryWord(greekWord) {
                 <div class="word-form-item">
                     <div class="word-form-label">${form.label}:</div>
                     <div class="word-form-value">
-                        <span class="word-form-greek">${form.greek}</span>
+                        <div class="word-form-greek-container">
+                            <span class="word-form-greek">${form.greek}</span>
+                            ${form.greek ? `<button class="btn-speak-small" onclick="playSpeech('${form.greek.replace(/'/g, "\\'")}', 'greek', this)" title="Произнести">🔊</button>` : ''}
+                        </div>
                         <span class="word-form-russian">${form.russian}</span>
                     </div>
                 </div>
@@ -1204,9 +1238,54 @@ async function showWordDetailsModalForArbitraryWord(greekWord) {
     }
 }
 
+async function addWordFromDetails(greekWord) {
+    try {
+        const addButton = document.getElementById('word-details-add-button');
+        const originalText = addButton.textContent;
+
+        // Show loading state
+        addButton.disabled = true;
+        addButton.textContent = 'Добавление...';
+
+        // Add word using existing API
+        const data = await apiRequest('add-word', {
+            method: 'POST',
+            body: JSON.stringify({
+                word: greekWord,
+                language: 'greek'
+            })
+        });
+
+        if (data.success) {
+            // Reload words list
+            await loadWords();
+
+            // Show success message
+            tg.showAlert(`Слово добавлено: ${data.word.greek} - ${data.word.russian}`);
+
+            // Close modal
+            hideWordDetailsModal();
+        } else {
+            // Show error
+            tg.showAlert(data.error || 'Не удалось добавить слово');
+            addButton.disabled = false;
+            addButton.textContent = originalText;
+        }
+    } catch (error) {
+        console.error('Error adding word from details:', error);
+        tg.showAlert('Ошибка при добавлении слова');
+
+        // Restore button state
+        const addButton = document.getElementById('word-details-add-button');
+        addButton.disabled = false;
+        addButton.textContent = '➕ Добавить в изучаемые';
+    }
+}
+
 function hideWordDetailsModal() {
     document.getElementById('word-details-modal').classList.add('hidden');
     document.getElementById('word-forms-section').classList.add('hidden');
+    document.getElementById('word-details-add-button-section').classList.add('hidden');
 }
 
 // ========== UI Rendering Functions ==========
@@ -1576,9 +1655,7 @@ function renderMatchingExercise() {
     document.getElementById('exercise-sentence-clickable').style.display = 'none';
     document.getElementById('exercise-translation').style.display = 'none';
     document.getElementById('exercise-options').style.display = 'none';
-    document.getElementById('exercise-feedback').classList.add('hidden');
-    document.getElementById('next-exercise-btn').classList.add('hidden');
-    document.getElementById('mark-learned-btn').classList.add('hidden');
+    document.getElementById('exercise-result-panel').classList.add('hidden');
 
     // Create matching container
     const contentDiv = document.getElementById('exercise-content');
@@ -1729,7 +1806,16 @@ async function showMatchingComplete() {
         </div>
     `;
 
-    document.getElementById('next-exercise-btn').classList.remove('hidden');
+    // Show result panel for matching exercise
+    const resultPanel = document.getElementById('exercise-result-panel');
+    const wordInfo = document.getElementById('result-word-info');
+    const resultFeedback = document.getElementById('result-feedback');
+
+    wordInfo.innerHTML = `<div style="text-align: center; font-weight: 600;">Упражнение завершено!</div>`;
+    resultFeedback.textContent = `Точность: ${accuracy}%. Неправильных попыток: ${state.matchingState.incorrectAttempts}`;
+    resultFeedback.className = 'result-feedback success';
+
+    resultPanel.classList.remove('hidden');
 }
 
 function parseSentenceWords(sentence, correctAnswer, wordId) {
@@ -1871,11 +1957,9 @@ function renderExercise() {
         <button class="btn-speak" onclick="playSpeech('${ex.sentence_translation.replace(/'/g, "\\'")}', '${translationLanguage}', this)" title="Speak translation">🔊</button>
     `;
 
-    // Hide button options, hide feedback and buttons
+    // Hide button options and result panel
     document.getElementById('exercise-options').style.display = 'none';
-    document.getElementById('exercise-feedback').classList.add('hidden');
-    document.getElementById('next-exercise-btn').classList.add('hidden');
-    document.getElementById('mark-learned-btn').classList.add('hidden');
+    document.getElementById('exercise-result-panel').classList.add('hidden');
 
     showExerciseScreen();
 }
@@ -1907,14 +1991,39 @@ async function handleWordClick(wordElement) {
             });
         }
 
-        // Show feedback
-        const feedback = document.getElementById('exercise-feedback');
-        feedback.textContent = result.explanation;
-        feedback.className = 'feedback ' + (result.correct ? 'success' : 'error');
+        // Get word information
+        const ex = state.currentExercise;
+        let greekWord = '';
+        let russianWord = '';
 
-        // Show next button
-        document.getElementById('next-exercise-btn').classList.remove('hidden');
-        document.getElementById('mark-learned-btn').classList.remove('hidden');
+        if (ex.direction === 'greek_to_russian') {
+            greekWord = ex.correct_answer;
+            russianWord = ex.translated_word;
+        } else {
+            greekWord = ex.translated_word;
+            russianWord = ex.correct_answer;
+        }
+
+        // Show result panel with word info
+        const resultPanel = document.getElementById('exercise-result-panel');
+        const wordInfo = document.getElementById('result-word-info');
+        const resultFeedback = document.getElementById('result-feedback');
+
+        // Set word information
+        wordInfo.innerHTML = `
+            <div class="word-pair">
+                <span class="word-greek">${greekWord}</span>
+                <span class="word-separator">→</span>
+                <span class="word-russian">${russianWord}</span>
+            </div>
+        `;
+
+        // Set feedback
+        resultFeedback.textContent = result.explanation;
+        resultFeedback.className = 'result-feedback ' + (result.correct ? 'success' : 'error');
+
+        // Show panel
+        resultPanel.classList.remove('hidden');
 
         // Vibrate on correct answer
         if (result.correct && tg.HapticFeedback) {
@@ -1944,14 +2053,45 @@ async function handleOptionClick(selectedOption) {
             }
         });
 
-        // Show feedback
-        const feedback = document.getElementById('exercise-feedback');
-        feedback.textContent = result.explanation;
-        feedback.className = 'feedback ' + (result.correct ? 'success' : 'error');
+        // Get word information (if available)
+        const ex = state.currentExercise;
+        let greekWord = '';
+        let russianWord = '';
 
-        // Show next button
-        document.getElementById('next-exercise-btn').classList.remove('hidden');
-        document.getElementById('mark-learned-btn').classList.remove('hidden');
+        if (ex && ex.direction) {
+            if (ex.direction === 'greek_to_russian') {
+                greekWord = ex.correct_answer || '';
+                russianWord = ex.translated_word || '';
+            } else {
+                greekWord = ex.translated_word || '';
+                russianWord = ex.correct_answer || '';
+            }
+        }
+
+        // Show result panel with word info
+        const resultPanel = document.getElementById('exercise-result-panel');
+        const wordInfo = document.getElementById('result-word-info');
+        const resultFeedback = document.getElementById('result-feedback');
+
+        // Set word information if available
+        if (greekWord && russianWord) {
+            wordInfo.innerHTML = `
+                <div class="word-pair">
+                    <span class="word-greek">${greekWord}</span>
+                    <span class="word-separator">→</span>
+                    <span class="word-russian">${russianWord}</span>
+                </div>
+            `;
+        } else {
+            wordInfo.innerHTML = '';
+        }
+
+        // Set feedback
+        resultFeedback.textContent = result.explanation;
+        resultFeedback.className = 'result-feedback ' + (result.correct ? 'success' : 'error');
+
+        // Show panel
+        resultPanel.classList.remove('hidden');
 
         // Vibrate on correct answer
         if (result.correct && tg.HapticFeedback) {
@@ -1986,6 +2126,8 @@ function showMainScreen() {
     showScreen('main-screen');
     // Reset list practice mode
     state.selectedListForPractice = null;
+    // Hide result panel
+    document.getElementById('exercise-result-panel').classList.add('hidden');
 }
 
 function showExerciseScreen() {
@@ -2533,7 +2675,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Exercise screen buttons
     document.getElementById('exit-exercise-btn').addEventListener('click', showMainScreen);
 
-    document.getElementById('next-exercise-btn').addEventListener('click', () => {
+    // Result panel buttons (new fixed bottom panel)
+    document.getElementById('result-next-btn').addEventListener('click', () => {
         if (state.exerciseType === 'matching_cards') {
             getMatchingExercise();
         } else {
@@ -2541,13 +2684,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('mark-learned-btn').addEventListener('click', async () => {
+    document.getElementById('result-mark-learned-btn').addEventListener('click', async () => {
         await markWordAsLearned(state.currentExercise.word_id);
 
         if (state.learningWords.length > 0) {
             getExercise();
         } else {
-            tg.showAlert('All words learned! 🎉');
+            tg.showAlert('Все слова изучены! 🎉');
             showMainScreen();
         }
     });
