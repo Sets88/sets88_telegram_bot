@@ -1096,6 +1096,9 @@ async function showWordDetailsModalForRussianWord(russianWord) {
         const addButtonSection = document.getElementById('word-details-add-button-section');
         const addButton = document.getElementById('word-details-add-button');
         addButtonSection.classList.remove('hidden');
+        // Reset button state
+        addButton.disabled = false;
+        addButton.textContent = '➕ Добавить в изучаемые';
         // Temporarily use translation.greek, will update after fetching forms
         addButton.onclick = () => addWordFromDetails(translation.greek);
 
@@ -1163,6 +1166,9 @@ async function showWordDetailsModalForArbitraryWord(greekWord) {
     const addButtonSection = document.getElementById('word-details-add-button-section');
     const addButton = document.getElementById('word-details-add-button');
     addButtonSection.classList.remove('hidden');
+    // Reset button state
+    addButton.disabled = false;
+    addButton.textContent = '➕ Добавить в изучаемые';
     // Temporarily use greekWord, will update after fetching forms
     addButton.onclick = () => addWordFromDetails(greekWord);
 
