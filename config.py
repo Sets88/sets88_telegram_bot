@@ -12,7 +12,7 @@ if not os.path.exists(CONFIG_PATH):
 
 configdata = json.load(open(CONFIG_PATH, 'r'))
 
-ALLOWED_USER_NAMES = configdata['ALLOWED_USER_NAMES']
+ALLOWED_USER_IDS = configdata['ALLOWED_USER_IDS']
 OPENAI_API_KEY = configdata.get('OPENAI_API_KEY', None)
 OLLAMA_HOST = configdata.get('OLLAMA_HOST', None)
 

@@ -25,7 +25,10 @@ Personal Telegram bot with a comprehensive AI assistant platform:
     - Send the command /newbot to the @BotFather bot
     - Enter the bot's name
     - Save the received token in config.json -> TELEGRAM_TOKEN
-4. Add the usernames of users who will have access to the bot to config.json -> ALLOWED_USER_NAMES
+4. Add the Telegram user IDs of users who will have access to the bot to config.json -> ALLOWED_USER_IDS
+   - Format: `{"user_id": "Display Name", ...}`
+   - To get your Telegram user ID, message @userinfobot or @getmyid_bot on Telegram
+   - Example: `"ALLOWED_USER_IDS": {"123456789": "John Doe", "987654321": "Jane"}`
 
 ## If you need to use OpenAi(Optional):
 
@@ -58,8 +61,11 @@ Personal Telegram bot with a comprehensive AI assistant platform:
 ## Permissions Configuration(Optional):
 
 9. Configure user permissions in config.json -> USER_PERMISSIONS:
+    - Use user's Telegram ID as the key (must match ALLOWED_USER_IDS)
     - Set `is_admin`, `can_use_tools`, `can_use_ollama_llm_models` per user
+    - The `default` key provides fallback permissions for users without specific settings
     - Control access to specific features and models
+    - Example: `"USER_PERMISSIONS": {"123456789": {"is_admin": true}, "default": {"is_admin": false}}`
 
 10. Install dependencies, and start the bot by running the command:
 

@@ -11,6 +11,7 @@ import config
 from telebot_nav import TeleBotNav
 from logger import logger
 from lib.greek_learning import GreekLearningManager, ExerciseDirection
+from lib.user_helpers import get_user_display_name
 
 
 async def start_greek(botnav: TeleBotNav, message: Message) -> None:
@@ -207,7 +208,9 @@ class GreekWebApp:
         user = validate_telegram_init_data(init_data, config.TELEGRAM_TOKEN)
 
         if user:
-            logger.info(f"Authentication successful for user {user.get('id')}")
+            user_id = user.get('id')
+            user_display_name = get_user_display_name(user_id)
+            logger.info(f"Authentication successful for user {user_display_name} ({user_id})")
         else:
             logger.error("Authentication failed: invalid signature")
 

@@ -7,9 +7,10 @@ from telebot.asyncio_storage import StateMemoryStorage
 
 from telebot_nav import TeleBotNav
 from config import TELEGRAM_TOKEN
-from config import ALLOWED_USER_NAMES
+from config import ALLOWED_USER_IDS
 
 from lib.permissions import is_replicate_available
+from lib.user_helpers import get_user_display_name
 import config
 import openai_module
 import llm_module
@@ -29,15 +30,15 @@ class ExceptionH(ExceptionHandler):
 async def start(botnav: TeleBotNav, message: Message) -> None:
     botnav.clean_default_handler(message)
     botnav.clean_next_handler(message)
-    logger.info(f'{message.from_user.username} {message.chat.id}')
-    username = botnav.get_user(message).username
+    user = botnav.get_user(message)
+    user_id = user.id
+    user_id_str = str(user_id)
+    display_name = get_user_display_name(user_id)
 
-    if (ALLOWED_USER_NAMES and (
-            not username or
-            username.lower() not in ALLOWED_USER_NAMES
-        )
-    ):
-        logger.info(f'{username} {message.chat.id} not allowed')
+    logger.info(f'{display_name} (ID: {user_id}) {message.chat.id}')
+
+    if ALLOWED_USER_IDS and user_id_str not in ALLOWED_USER_IDS:
+        logger.info(f'{display_name} (ID: {user_id}) {message.chat.id} not allowed')
         await botnav.bot.send_message(message.chat.id, "Build your own bot, here is a source code: https://github.com/Sets88/sets88_telegram_bot")
         return
 

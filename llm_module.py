@@ -25,6 +25,7 @@ from lib.agents import DEFAULT_DRAWING_MODEL, DIFFUSION_MODELS_IMAGE_FIELDS, OPE
 from telebot_nav import TeleBotNav
 from logger import logger
 from help_content import HELP_CONTENT
+from lib.user_helpers import get_user_display_name
 
 
 AVAILABLE_LLM_MODELS = {
@@ -704,7 +705,7 @@ class LLMRouter:
             user = botnav.get_user(message)
 
             save_conversation_to_file(
-                f'{user.id}_{user.username}',
+                f'{user.id}_{get_user_display_name(user.id)}',
                 conversation
             )
         except RateLimitError as exc:

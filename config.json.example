@@ -1,5 +1,8 @@
 {
-    "ALLOWED_USER_NAMES": ["some_username"],
+    "ALLOWED_USER_IDS": {
+        "123456789": "John Doe",
+        "987654321": "Jane Smith"
+    },
     "OPENAI_API_KEY": "****",
     "TELEGRAM_TOKEN": "****",
     "ANTHROPIC_API_KEY": "****",
@@ -11,13 +14,21 @@
     "MCP_FETCH_URL": "http://mcp_fetch_node:8080/sse",
     "SCHEDULES": 1,
     "USER_PERMISSIONS": {
-        "default": {
+        "123456789": {
             "is_admin": true,
             "can_use_tools": true,
             "can_use_ollama_llm_models": true,
             "can_use_replicate_models": true,
             "can_use_memory_tool": true,
             "exclude_replicate_models": []
+        },
+        "default": {
+            "is_admin": false,
+            "can_use_tools": true,
+            "can_use_ollama_llm_models": false,
+            "can_use_replicate_models": false,
+            "can_use_memory_tool": false,
+            "exclude_replicate_models": ["veo-3.1", "veo-3.1-fast"]
         }
     }
 }

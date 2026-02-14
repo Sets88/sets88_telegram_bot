@@ -8,6 +8,7 @@ from typing import Coroutine
 
 from telebot import ExceptionHandler
 from telebot.async_telebot import AsyncTeleBot
+from lib.user_helpers import get_user_display_name
 from telebot.asyncio_storage import StateMemoryStorage
 from telebot.asyncio_storage import StateStorageBase
 from telebot.types import BotCommand
@@ -126,7 +127,9 @@ class TeleBotNav:
             else:
                 func_name = str(self.buttons[call.data])
 
-        logger.info(f"{call.from_user.username} pressed: {call.data}({func_name})")
+        user_id = call.from_user.id
+        display_name = get_user_display_name(user_id)
+        logger.info(f"{display_name} (ID: {user_id}) pressed: {call.data}({func_name})")
 
         # To make data appear
         await self.bot.set_state(call.from_user.id, '', call.message.chat.id)
@@ -145,7 +148,10 @@ class TeleBotNav:
                 logger.exception(exc)
 
     async def message_handler(self, message: Message) -> None:
-        logger.info(f"{self.get_user(message).username} sent: {message.text}")
+        user = self.get_user(message)
+        user_id = user.id
+        display_name = get_user_display_name(user_id)
+        logger.info(f"{display_name} (ID: {user_id}) sent: {message.text}")
 
         # To make data appear
         await self.bot.set_state(message.from_user.id, '', message.chat.id)
