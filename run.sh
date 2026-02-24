@@ -40,4 +40,4 @@ docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_words
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_learned
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_stats
 docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_word_forms
-docker exec -u 0 gptchat_bot chown 1000:1000 /greek_audio_cache
+docker exec -u 0 gptchat_bot chown 1000:1000 /app/greek_audio_cache
