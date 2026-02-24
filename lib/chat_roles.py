@@ -526,7 +526,7 @@ def get_chat_roles(available_llm_models: dict[str, 'LLMModel'], default_model_na
                 available_llm_models[default_model_name]
             ),
         },
-        'Greek': {
+        'Gr Teacher': {
             'system_prompt': GREEK_TEACHER_PROMPT,
             'model': available_llm_models.get(
                 'claude-sonnet-4-5',
