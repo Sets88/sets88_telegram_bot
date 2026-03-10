@@ -1261,7 +1261,7 @@ Respond ONLY with the JSON object, no additional text."""
 
     async def generate_speech(self, text: str, language: str = 'auto') -> Optional[Dict[str, Any]]:
         """
-        Generate speech audio from text using Replicate speech-02-turbo model
+        Generate speech audio from text using Replicate speech-2.8-turbo model
         - Single words (≤3 words): cached to disk, returns {'type': 'file', 'path': local_path}
         - Sentences (>3 words): cached URL in LRU memory, returns {'type': 'url', 'path': remote_url}
 
@@ -1303,9 +1303,9 @@ Respond ONLY with the JSON object, no additional text."""
                     return {'type': 'url', 'path': cached_url}
 
             # Generate audio using Replicate
-            model_info = replicate_module.REPLICATE_MODELS.get('speech-02-turbo')
+            model_info = replicate_module.REPLICATE_MODELS.get('speech-2.8-turbo')
             if not model_info:
-                logger.error("speech-02-turbo model not found in REPLICATE_MODELS")
+                logger.error("speech-2.8-turbo model not found in REPLICATE_MODELS")
                 return None
 
             # Prepare input for speech model

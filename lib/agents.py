@@ -27,13 +27,14 @@ SUBAGENT_PROMPT = '''You are a transparent tool executor. Your SOLE function is 
 '''
 
 
-DEFAULT_DRAWING_MODEL = 'flux-2-pro'
+DEFAULT_DRAWING_MODEL = 'flux-2-max'
 
 
 DIFFUSION_MODELS_IMAGE_FIELDS: dict[str, str] = {
-    'flux-2-pro': 'input_images',
-    'nano-banana-pro': 'image_input',
+    'flux-2-max': 'input_images',
+    'nano-banana-2': 'image_input',
     'seedream-4.5': 'image_input',
+    'seedream-5-lite': 'image_input',
     'qwen-image-edit': 'image',
 }
 

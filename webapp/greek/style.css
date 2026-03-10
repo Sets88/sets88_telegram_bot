@@ -1112,3 +1112,144 @@ h2 {
 .matching-card-text {
     flex: 1;
 }
+
+/* ========== Anki Cards Exercise ========== */
+
+.anki-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 20px;
+}
+
+.anki-content.hidden {
+    display: none;
+}
+
+.anki-card {
+    background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+    border-radius: 16px;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.anki-word-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.anki-greek-text {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--tg-theme-text-color, #000);
+    line-height: 1.2;
+}
+
+.anki-russian-text {
+    font-size: 20px;
+    color: var(--tg-theme-hint-color, #666);
+    font-weight: 500;
+}
+
+.anki-word-type-badge {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--tg-theme-hint-color, #888);
+    background: rgba(0,0,0,0.06);
+    border-radius: 8px;
+    padding: 2px 8px;
+    text-transform: capitalize;
+    margin-top: 4px;
+    align-self: flex-start;
+}
+
+.anki-divider {
+    border: none;
+    border-top: 1px solid rgba(0,0,0,0.1);
+    margin: 4px 0;
+}
+
+.anki-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.anki-controls .btn {
+    flex: 1;
+}
+
+.anki-example-section {
+    background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+    border-radius: 12px;
+    padding: 16px;
+    border-left: 3px solid var(--tg-theme-button-color, #3390ec);
+}
+
+.anki-example-section.hidden {
+    display: none;
+}
+
+.anki-example-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--tg-theme-hint-color, #666);
+    font-size: 14px;
+}
+
+.anki-example-loading.hidden {
+    display: none;
+}
+
+.loader-small {
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid var(--tg-theme-button-color, #3390ec);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+.anki-example-content.hidden {
+    display: none;
+}
+
+.anki-example-sentence-row,
+.anki-example-translation-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.anki-example-sentence-row span {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--tg-theme-text-color, #000);
+    flex: 1;
+}
+
+.anki-example-translation-row span {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--tg-theme-hint-color, #666);
+    flex: 1;
+    font-style: italic;
+}
+
+.anki-example-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.anki-refresh-btn {
+    font-size: 13px;
+    padding: 6px 12px;
+}

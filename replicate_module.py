@@ -2,7 +2,7 @@ import os
 import asyncio
 import functools
 from io import BytesIO
-from copy import copy
+from copy import copy, deepcopy
 from typing import Any
 import mimetypes
 
@@ -90,9 +90,9 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'nano-banana-pro': {
-        'description': 'Google\'s state of the art image generation and editing model',
-        'replicate_id': 'google/nano-banana-pro',
+    'nano-banana-2': {
+        'description': 'Google\'s fast image generation model with conversational editing, multi-image fusion, and character consistency',
+        'replicate_id': 'google/nano-banana-2',
         'input_field': 'prompt',
         'input_type': 'text',
         'output_type': 'photo',
@@ -116,15 +116,15 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'flux-2-pro': {
-        'description': 'High-quality image generation and editing with support for eight reference images',
-        'replicate_id': 'black-forest-labs/flux-2-pro',
+    'flux-2-max': {
+        'description': 'The highest fidelity image model from Black Forest Labs',
+        'replicate_id': 'black-forest-labs/flux-2-max',
         'input_type': 'text',
         'output_type': 'photo',
         'available_params': {
             'safety_tolerance': {
                 'type': 'int',
-                'default': 2,
+                'default': 5,
                 'min': 1,
                 'max': 5,
                 'description': 'Safety tolerance, 1 is most strict and 5 is most permissive'
@@ -146,6 +146,25 @@ REPLICATE_MODELS = {
             'image_input': {
                 'type': 'photo_list',
                 'description': 'Input images'
+            }
+        }
+    },
+    'seedream-5-lite': {
+        'description': 'Seedream 5.0 lite: image generation with built-in reasoning, example-based editing, and deep domain knowledge',
+        'replicate_id': 'bytedance/seedream-5-lite',
+        'input_field': 'prompt',
+        'input_type': 'text',
+        'output_type': 'photo',
+        'available_params': {
+            'image_input': {
+                'type': 'photo_list',
+                'description': 'Input images'
+            },
+            'output_format': {
+                'type': 'select',
+                'options': ['png', 'jpeg'],
+                'default': 'jpeg',
+                'description': 'Output image format'
             }
         }
     },
@@ -189,9 +208,9 @@ REPLICATE_MODELS = {
             }
         }
     },
-    'speech-02-turbo': {
+    'speech-2.8-turbo': {
         'description': 'Text-to-Audio (T2A) that offers voice synthesis, emotional expression, and multilingual capabilities. Designed for real-time applications with low latency',
-        'replicate_id': 'minimax/speech-02-turbo',
+        'replicate_id': 'minimax/speech-2.8-turbo',
         'input_type': 'text',
         'input_field': 'text',
         'output_type': 'audio',
@@ -211,6 +230,16 @@ REPLICATE_MODELS = {
         }
     }
 }
+
+
+def build_full_params(model: dict[str, Any], input_data: dict[str, Any]) -> dict[str, Any]:
+    result_params = deepcopy(input_data)
+
+    for param_name, param_info in model['available_params'].items():
+        if param_name not in result_params and 'default' in param_info:
+            result_params[param_name] = param_info.get('default', None)
+
+    return result_params
 
 
 def get_model_params(telebot_nav: TeleBotNav, message: Message, model_name: str) -> dict[str, Any]:
@@ -246,9 +275,11 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
     if not replicate_model:
         raise ValueError(f'Unknown model {model_name}')
 
+    request_input_data = build_full_params(replicate_model, input_data)
+
     result = await botnav.await_coro_sending_action(
         message.chat.id,
-        asyncio.to_thread(replicate_execute, replicate_model['replicate_id'], input_data),
+        asyncio.to_thread(replicate_execute, replicate_model['replicate_id'], request_input_data),
         get_await_action_type(replicate_model)
     )
 

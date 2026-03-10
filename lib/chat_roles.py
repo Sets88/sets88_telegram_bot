@@ -514,7 +514,7 @@ def get_chat_roles(available_llm_models: dict[str, 'LLMModel'], default_model_na
         'ELIM5': {
             'system_prompt': ELI5_PROMPT,
             'model': available_llm_models.get(
-                'claude-sonnet-4-5',
+                'claude-sonnet-4-6',
                 available_llm_models[default_model_name]
             ),
         },
@@ -522,14 +522,14 @@ def get_chat_roles(available_llm_models: dict[str, 'LLMModel'], default_model_na
             'system_prompt': FIXER_PROMPT,
             'one_off': True,
             'model': available_llm_models.get(
-                'claude-sonnet-4-5',
+                'claude-sonnet-4-6',
                 available_llm_models[default_model_name]
             ),
         },
         'Gr Teacher': {
             'system_prompt': GREEK_TEACHER_PROMPT,
             'model': available_llm_models.get(
-                'claude-sonnet-4-5',
+                'claude-sonnet-4-6',
                 available_llm_models[default_model_name]
             ),
         }

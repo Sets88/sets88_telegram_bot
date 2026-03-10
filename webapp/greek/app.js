@@ -39,7 +39,11 @@ const state = {
     },
     lists: [],  // All unique list names
     currentList: null,  // Currently selected list for management
-    selectedListForPractice: null  // List selected for practice
+    selectedListForPractice: null,  // List selected for practice
+    ankiState: {
+        words: [],        // Shuffled word list for current session
+        currentIndex: 0   // Current card index
+    }
 };
 
 // ========== API Helper Functions ==========
@@ -355,14 +359,50 @@ async function getMatchingExercise(direction = 'greek_to_russian') {
     try {
         showExerciseLoading();
 
-        let url = `exercise/matching?direction=${direction}`;
+        let data;
 
-        // Add word type filter if selected
-        if (state.selectedWordType) {
-            url += `&word_type=${state.selectedWordType}`;
+        // If practicing a list, generate pairs locally from list words
+        if (state.selectedListForPractice) {
+            const words = getWordsByList(state.selectedListForPractice);
+            let listWords = words.learning;
+
+            // Apply word type filter if selected
+            if (state.selectedWordType) {
+                listWords = listWords.filter(w => w.word_type === state.selectedWordType);
+            }
+
+            if (listWords.length === 0) {
+                throw new Error('No learning words in this list');
+            }
+
+            // Select 10 words (with repetitions if needed)
+            let selected;
+            if (listWords.length < 10) {
+                selected = [];
+                while (selected.length < 10) {
+                    selected.push(...listWords);
+                }
+                selected = selected.slice(0, 10);
+            } else {
+                const shuffled = [...listWords].sort(() => Math.random() - 0.5);
+                selected = shuffled.slice(0, 10);
+            }
+
+            data = {
+                exercise_type: 'matching_cards',
+                direction: direction,
+                pairs: selected.map(w => ({ word_id: w.id, greek: w.greek, russian: w.russian }))
+            };
+        } else {
+            let url = `exercise/matching?direction=${direction}`;
+
+            // Add word type filter if selected
+            if (state.selectedWordType) {
+                url += `&word_type=${state.selectedWordType}`;
+            }
+
+            data = await apiRequest(url);
         }
-
-        const data = await apiRequest(url);
 
         state.currentExercise = data;
         state.exerciseType = 'matching_cards';
@@ -384,6 +424,161 @@ async function getMatchingExercise(direction = 'greek_to_russian') {
         tg.showAlert('Failed to generate matching exercise');
         showMainScreen();
     }
+}
+
+// ========== Anki Cards Exercise ==========
+
+function startAnkiExercise() {
+    // Get words for this session
+    let words = state.learningWords;
+    if (state.selectedListForPractice) {
+        const listWords = getWordsByList(state.selectedListForPractice);
+        words = listWords.learning;
+    }
+
+    // Apply word type filter if selected
+    if (state.selectedWordType) {
+        words = words.filter(w => w.word_type === state.selectedWordType);
+    }
+
+    if (words.length === 0) {
+        tg.showAlert('No words available');
+        return;
+    }
+
+    // Shuffle words
+    state.ankiState = {
+        words: [...words].sort(() => Math.random() - 0.5),
+        currentIndex: 0
+    };
+    state.exerciseType = 'anki_cards';
+    state.exerciseCount = 0;
+
+    showExerciseScreen();
+    renderAnkiCard();
+}
+
+function renderAnkiCard() {
+    const { words, currentIndex } = state.ankiState;
+    const word = words[currentIndex];
+    state.exerciseCount++;
+
+    // Update counter
+    let counterText = `${currentIndex + 1} / ${words.length}`;
+    if (state.selectedListForPractice) {
+        counterText += ` - 📋 ${state.selectedListForPractice}`;
+    }
+    document.getElementById('exercise-counter').textContent = counterText;
+
+    // Hide result panel and exercise loading
+    document.getElementById('exercise-result-panel').classList.add('hidden');
+    document.getElementById('exercise-loading').classList.add('hidden');
+    document.getElementById('exercise-content').style.display = 'block';
+
+    // Hide standard exercise divs
+    ['exercise-question', 'exercise-sentence', 'exercise-sentence-clickable',
+     'exercise-translation', 'exercise-options'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.innerHTML = ''; el.style.display = 'none'; }
+    });
+
+    // Render anki card
+    const ankiEl = document.getElementById('anki-content');
+    ankiEl.classList.remove('hidden');
+    ankiEl.innerHTML = `
+        <div class="anki-card">
+            <div class="anki-word-row">
+                <span class="anki-greek-text">${word.greek}</span>
+                <button class="btn-speak" onclick="playSpeech('${word.greek.replace(/'/g, "\\'")}', 'greek', this)" title="Произнести">🔊</button>
+            </div>
+            <hr class="anki-divider">
+            <div class="anki-word-row">
+                <span class="anki-russian-text">${word.russian}</span>
+                <button class="btn-speak" onclick="playSpeech('${word.russian.replace(/'/g, "\\'")}', 'russian', this)" title="Произнести">🔊</button>
+            </div>
+            ${word.word_type ? `<span class="anki-word-type-badge">${word.word_type}</span>` : ''}
+        </div>
+
+        <div class="anki-controls">
+            <button id="anki-example-btn" class="btn btn-secondary" onclick="loadAnkiExample()">📖 Example</button>
+            <button class="btn btn-primary" onclick="nextAnkiCard()">Next →</button>
+        </div>
+
+        <div id="anki-example-section" class="anki-example-section hidden">
+            <div id="anki-example-loading" class="anki-example-loading hidden">
+                <div class="loader-small"></div>
+                <span>Loading example...</span>
+            </div>
+            <div id="anki-example-content" class="anki-example-content hidden">
+                <div class="anki-example-sentence-row">
+                    <span id="anki-sentence-text"></span>
+                    <button id="anki-speak-sentence" class="btn-speak" title="Произнести">🔊</button>
+                </div>
+                <div class="anki-example-translation-row">
+                    <span id="anki-translation-text"></span>
+                    <button id="anki-speak-translation" class="btn-speak" title="Произнести">🔊</button>
+                </div>
+                <div class="anki-example-actions">
+                    <button class="btn btn-secondary anki-refresh-btn" onclick="loadAnkiExample()">🔄 New example</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function loadAnkiExample() {
+    const { words, currentIndex } = state.ankiState;
+    const word = words[currentIndex];
+
+    const exampleSection = document.getElementById('anki-example-section');
+    const loadingEl = document.getElementById('anki-example-loading');
+    const contentEl = document.getElementById('anki-example-content');
+    const exampleBtn = document.getElementById('anki-example-btn');
+
+    if (!exampleSection) return;
+
+    exampleSection.classList.remove('hidden');
+    loadingEl.classList.remove('hidden');
+    contentEl.classList.add('hidden');
+    if (exampleBtn) exampleBtn.disabled = true;
+
+    try {
+        const data = await apiRequest(`exercise?word_id=${word.id}&direction=greek_to_russian`);
+
+        document.getElementById('anki-sentence-text').textContent = data.sentence;
+        document.getElementById('anki-translation-text').textContent = data.sentence_translation;
+
+        const sentenceBtn = document.getElementById('anki-speak-sentence');
+        const translationBtn = document.getElementById('anki-speak-translation');
+        if (sentenceBtn) sentenceBtn.onclick = function() { playSpeech(data.sentence, 'greek', this); };
+        if (translationBtn) translationBtn.onclick = function() { playSpeech(data.sentence_translation, 'russian', this); };
+
+        loadingEl.classList.add('hidden');
+        contentEl.classList.remove('hidden');
+    } catch (error) {
+        console.error('Error loading anki example:', error);
+        loadingEl.classList.add('hidden');
+        exampleSection.classList.add('hidden');
+        tg.showAlert('Failed to load example');
+    } finally {
+        if (exampleBtn) exampleBtn.disabled = false;
+    }
+}
+
+function nextAnkiCard() {
+    const { words, currentIndex } = state.ankiState;
+    const nextIndex = currentIndex + 1;
+
+    if (nextIndex >= words.length) {
+        // Reshuffle and start over
+        state.ankiState.words = [...words].sort(() => Math.random() - 0.5);
+        state.ankiState.currentIndex = 0;
+        tg.showAlert(`Round complete! Starting over with ${words.length} words.`);
+    } else {
+        state.ankiState.currentIndex = nextIndex;
+    }
+
+    renderAnkiCard();
 }
 
 async function validateMatchingResults(results) {
@@ -1623,6 +1818,14 @@ function renderMatchingExercise() {
     document.getElementById('exercise-loading').classList.add('hidden');
     document.getElementById('exercise-content').style.display = 'block';
 
+    // Hide anki content, restore standard divs
+    document.getElementById('anki-content').classList.add('hidden');
+    ['exercise-question', 'exercise-sentence', 'exercise-sentence-clickable',
+     'exercise-translation', 'exercise-options'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = '';
+    });
+
     // Update counter (with list name if practicing a list)
     let counterText = `Exercise ${state.exerciseCount}`;
     if (state.selectedListForPractice) {
@@ -1897,6 +2100,14 @@ function renderExercise() {
     document.getElementById('exercise-loading').classList.add('hidden');
     document.getElementById('exercise-content').style.display = 'block';
 
+    // Hide anki content, restore standard divs
+    document.getElementById('anki-content').classList.add('hidden');
+    ['exercise-question', 'exercise-sentence', 'exercise-sentence-clickable',
+     'exercise-translation', 'exercise-options'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = '';
+    });
+
     // Update counter (with list name if practicing a list)
     let counterText = `Exercise ${state.exerciseCount}`;
     if (state.selectedListForPractice) {
@@ -2134,6 +2345,13 @@ function showMainScreen() {
     state.selectedListForPractice = null;
     // Hide result panel
     document.getElementById('exercise-result-panel').classList.add('hidden');
+    // Restore standard exercise divs (in case anki was active)
+    document.getElementById('anki-content').classList.add('hidden');
+    ['exercise-question', 'exercise-sentence', 'exercise-sentence-clickable',
+     'exercise-translation', 'exercise-options'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = '';
+    });
 }
 
 function showExerciseScreen() {
@@ -2661,6 +2879,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             tg.showAlert('You need at least 10 words to play matching cards');
         }
+    });
+
+    document.getElementById('anki-exercise-btn').addEventListener('click', () => {
+        hideExerciseTypeModal();
+        startAnkiExercise();
     });
 
     document.getElementById('exercise-type-cancel-btn').addEventListener('click', hideExerciseTypeModal);
