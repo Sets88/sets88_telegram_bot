@@ -129,6 +129,31 @@
                 <h3>Fetch New Words</h3>
                 <p>How many words would you like to fetch?</p>
                 <input type="number" id="fetch-count-input" min="1" max="20" value="5" class="input">
+                <div class="topic-selection" style="margin-top:12px">
+                    <label class="filter-label">Topic:</label>
+                    <div class="topic-chips" id="fetch-topic-chips">
+                        <button class="topic-chip active" data-topic="">🌐 Any</button>
+                        <button class="topic-chip" data-topic="vacation">🏖 Vacation</button>
+                        <button class="topic-chip" data-topic="hospital">🏥 Hospital</button>
+                        <button class="topic-chip" data-topic="home">🏠 Home</button>
+                        <button class="topic-chip" data-topic="family">👨‍👩‍👧 Family</button>
+                        <button class="topic-chip" data-topic="work">💼 Work</button>
+                        <button class="topic-chip" data-topic="school">🎓 School</button>
+                        <button class="topic-chip" data-topic="food">🍽 Food</button>
+                        <button class="topic-chip" data-topic="shopping">🛒 Shopping</button>
+                        <button class="topic-chip" data-topic="travel">✈️ Travel</button>
+                        <button class="topic-chip" data-topic="nature">🌿 Nature</button>
+                        <button class="topic-chip" data-topic="sports">⚽ Sports</button>
+                        <button class="topic-chip" data-topic="friends">👥 Friends</button>
+                        <button class="topic-chip" data-topic="weather">🌤 Weather</button>
+                        <button class="topic-chip" data-topic="city">🏙 City</button>
+                        <button class="topic-chip" data-topic="health issues">❤️ Health</button>
+                        <button class="topic-chip" data-topic="public transport">🚌 Transport</button>
+                        <button class="topic-chip" data-topic="police station">🚔 Police</button>
+                        <button class="topic-chip" data-topic="theatre, ballet, cinema, library">🎭 Theatre</button>
+                        <button class="topic-chip" data-topic="tourist office">🗺 Tourism</button>
+                    </div>
+                </div>
                 <div class="modal-buttons">
                     <button id="fetch-cancel-btn" class="btn btn-secondary">Cancel</button>
                     <button id="fetch-confirm-btn" class="btn btn-primary">Fetch</button>

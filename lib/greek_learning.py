@@ -647,7 +647,7 @@ class GreekLearningManager:
 
     # ========== OpenRouter/OpenAI Integration ==========
 
-    async def fetch_words_from_openai(self, count: int = 5) -> List[Word]:
+    async def fetch_words_from_openai(self, count: int = 5, topic: Optional[str] = None) -> List[Word]:
         """
         Fetch new Greek-Russian word pairs from OpenAI via OpenRouter
         """
@@ -664,6 +664,11 @@ class GreekLearningManager:
         if all_known_words:
             exclusion_text = f"\n\nExclude these words that the user already knows:\n{', '.join(all_known_words[:100])}"
 
+        # Build topic instruction
+        topic_instruction = ""
+        if topic and topic.strip():
+            topic_instruction = f"\n- Words must be related to the topic: \"{topic.strip()}\" (use vocabulary specific to this topic/theme)"
+
         # Build prompt
         prompt = f"""You are a Greek language teacher. Generate {count} Greek words at A2 level (basic everyday vocabulary) with Russian translations.
 
@@ -671,7 +676,7 @@ Requirements:
 - Only A2 level words (common, practical everyday vocabulary)
 - Accurate Russian translations
 - No duplicates from the excluded list{exclusion_text}
-- Modern Greek words (avoid archaic/ancient terms)
+- Modern Greek words (avoid archaic/ancient terms){topic_instruction}
 
 Format your response as a valid JSON object with this structure:
 {{

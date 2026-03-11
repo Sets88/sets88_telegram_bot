@@ -23,6 +23,7 @@ const state = {
     exerciseType: null,
     selectedWordType: '', // Word type filter: '' = all, 'noun', 'verb', 'adjective'
     sentenceTopic: '',   // Topic bias for sentence context: '' = any, 'vacation', 'hospital', etc.
+    fetchWordsTopic: '', // Topic for fetching new words
     verbFormPreferences: {
         tenses: ['present'],
         persons: ['1st']
@@ -186,7 +187,7 @@ async function fetchNewWords(count) {
         showLoading();
         const data = await apiRequest('fetch-words', {
             method: 'POST',
-            body: JSON.stringify({ count })
+            body: JSON.stringify({ count, topic: state.fetchWordsTopic || '' })
         });
 
         state.learningWords = data.words || state.learningWords;
@@ -2457,7 +2458,6 @@ function showAddCustomWordModal() {
     input.value = '';
     errorEl.classList.add('hidden');
     loadingEl.classList.add('hidden');
-
     // Show modal
     modal.classList.remove('hidden');
 
@@ -2896,14 +2896,24 @@ document.addEventListener('DOMContentLoaded', () => {
         getExercise();
     });
 
-    // Topic chip selection
+    // Topic chip selection (sentence exercise)
     document.getElementById('topic-chips').addEventListener('click', (e) => {
         const chip = e.target.closest('.topic-chip');
         if (!chip) return;
-        document.querySelectorAll('.topic-chip').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('#topic-chips .topic-chip').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         state.sentenceTopic = chip.dataset.topic;
     });
+
+    // Topic chip selection (fetch words modal)
+    document.getElementById('fetch-topic-chips').addEventListener('click', (e) => {
+        const chip = e.target.closest('.topic-chip');
+        if (!chip) return;
+        document.querySelectorAll('#fetch-topic-chips .topic-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        state.fetchWordsTopic = chip.dataset.topic;
+    });
+
 
     document.getElementById('matching-exercise-btn').addEventListener('click', () => {
         if (state.learningWords.length >= 10) {

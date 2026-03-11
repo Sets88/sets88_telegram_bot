@@ -275,12 +275,13 @@ class GreekWebApp:
         try:
             data = await request.json()
             count = data.get('count', 5)
+            topic = data.get('topic', '').strip() or None
 
             if count < 1 or count > 600:
                 return web.json_response({'error': 'Count must be between 1 and 600'}, status=400)
 
             manager = GreekLearningManager(user['id'])
-            new_words = await manager.fetch_words_from_openai(count)
+            new_words = await manager.fetch_words_from_openai(count, topic=topic)
 
             if not new_words:
                 return web.json_response({'error': 'Failed to fetch words'}, status=500)
