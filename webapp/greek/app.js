@@ -22,6 +22,7 @@ const state = {
     exerciseCount: 0,
     exerciseType: null,
     selectedWordType: '', // Word type filter: '' = all, 'noun', 'verb', 'adjective'
+    sentenceTopic: '',   // Topic bias for sentence context: '' = any, 'vacation', 'hospital', etc.
     verbFormPreferences: {
         tenses: ['present'],
         persons: ['1st']
@@ -319,6 +320,11 @@ async function getExercise(wordId = null, direction = 'random') {
                 url += `&verb_tenses=${prefs.tenses.join(',')}`;
                 url += `&verb_persons=${prefs.persons.join(',')}`;
             }
+        }
+
+        // Add topic bias if selected
+        if (state.sentenceTopic) {
+            url += `&topic=${encodeURIComponent(state.sentenceTopic)}`;
         }
 
         const data = await apiRequest(url);
@@ -2436,6 +2442,9 @@ function showExerciseTypeModal() {
 
 function hideExerciseTypeModal() {
     document.getElementById('exercise-type-modal').classList.add('hidden');
+    // Collapse sentence context panel
+    document.getElementById('sentence-context-settings').classList.add('hidden');
+    document.getElementById('sentence-context-arrow').textContent = '▼';
 }
 
 function showAddCustomWordModal() {
@@ -2862,12 +2871,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Exercise type modal
-    document.getElementById('sentence-exercise-btn').addEventListener('click', () => {
+    // Exercise type modal - Sentence Context toggle
+    document.getElementById('sentence-context-toggle').addEventListener('click', () => {
+        const settings = document.getElementById('sentence-context-settings');
+        const arrow = document.getElementById('sentence-context-arrow');
+        const isHidden = settings.classList.contains('hidden');
+        if (isHidden) {
+            settings.classList.remove('hidden');
+            arrow.textContent = '▲';
+        } else {
+            settings.classList.add('hidden');
+            arrow.textContent = '▼';
+        }
+    });
+
+    // Start sentence exercise button
+    document.getElementById('start-sentence-exercise-btn').addEventListener('click', () => {
+        // Collapse panel and reset arrow
+        document.getElementById('sentence-context-settings').classList.add('hidden');
+        document.getElementById('sentence-context-arrow').textContent = '▼';
         hideExerciseTypeModal();
         state.exerciseCount = 0;
         state.exerciseType = 'sentence_context';
         getExercise();
+    });
+
+    // Topic chip selection
+    document.getElementById('topic-chips').addEventListener('click', (e) => {
+        const chip = e.target.closest('.topic-chip');
+        if (!chip) return;
+        document.querySelectorAll('.topic-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        state.sentenceTopic = chip.dataset.topic;
     });
 
     document.getElementById('matching-exercise-btn').addEventListener('click', () => {

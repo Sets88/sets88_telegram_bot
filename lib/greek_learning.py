@@ -778,13 +778,20 @@ Respond ONLY with the JSON object, no additional text."""
         self,
         word: Word,
         direction: ExerciseDirection,
-        verb_preferences: Optional[Dict[str, List[str]]] = None
+        verb_preferences: Optional[Dict[str, List[str]]] = None,
+        topic: Optional[str] = None
     ) -> Exercise:
         """
         Generate exercise sentence using OpenAI via OpenRouter
         Direction: Greek→Russian or Russian→Greek
         verb_preferences: Optional dict with 'tenses' and 'persons' lists
+        topic: Optional topic to bias the sentence context (e.g. 'vacation', 'hospital')
         """
+        # Build topic instruction if provided
+        topic_instruction = ""
+        if topic and topic.strip():
+            topic_instruction = f"\n\nTOPIC: The sentence must be set in the context of \"{topic.strip()}\" (use vocabulary, situations, and scenarios related to this topic)."
+
         # Build verb form instructions if applicable
         verb_instructions = ""
         if word.word_type.lower() == 'verb' and verb_preferences:
@@ -832,7 +839,7 @@ Requirements:
 4. The marked word can be in any form(plural, case, tense, third person) or a common inflected form
 5. Provide Russian translation of the entire sentence
 6. Generate correct translation of the marked word into Russian{verb_instructions}
-7. Modern Greek (avoid archaic/ancient terms)
+7. Modern Greek (avoid archaic/ancient terms){topic_instruction}
 
 Format as a valid JSON object:
 {{
@@ -855,7 +862,7 @@ Requirements:
 5. Provide Greek translation of the entire sentence
 6. In the Greek translation, mark the corresponding Greek word with brackets: [[{word.greek}]]
 7. Generate correct Greek translation of the marked word{verb_instructions}
-8. Modern Greek (avoid archaic/ancient terms)
+8. Modern Greek (avoid archaic/ancient terms){topic_instruction}
 
 Format as a valid JSON object:
 {{

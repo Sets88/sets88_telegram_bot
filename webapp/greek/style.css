@@ -827,6 +827,101 @@ h2 {
     border-color: var(--tg-theme-button-color, #3390ec);
 }
 
+/* Exercise Panel (Sentence Context expandable) */
+.exercise-panel {
+    border: 1px solid var(--tg-theme-hint-color, #ddd);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.exercise-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px;
+    cursor: pointer;
+    background: var(--tg-theme-button-color, #3390ec);
+    color: var(--tg-theme-button-text-color, #fff);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.exercise-panel-header:active {
+    opacity: 0.85;
+}
+
+.exercise-panel-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.exercise-panel-icon {
+    font-size: 22px;
+}
+
+.exercise-panel-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.exercise-panel-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.exercise-panel-header .exercise-type-desc {
+    font-size: 12px;
+    opacity: 0.85;
+    font-weight: 400;
+    margin-top: 1px;
+}
+
+.exercise-panel-arrow {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.exercise-settings {
+    padding: 14px;
+    background: var(--tg-theme-secondary-bg-color, #f8f9fa);
+    border-top: 1px solid var(--tg-theme-hint-color, #ddd);
+}
+
+.exercise-settings.hidden {
+    display: none;
+}
+
+/* Topic chips */
+.topic-selection {
+    margin-bottom: 14px;
+}
+
+.topic-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.topic-chip {
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--tg-theme-hint-color, #bbb);
+    background: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.topic-chip.active {
+    background: var(--tg-theme-button-color, #3390ec);
+    color: var(--tg-theme-button-text-color, #fff);
+    border-color: var(--tg-theme-button-color, #3390ec);
+}
+
 /* Word Details Modal */
 .word-details-content {
     max-height: 80vh;

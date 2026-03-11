@@ -141,65 +141,106 @@
             <div class="modal-content">
                 <h3>Choose Exercise Type</h3>
 
-                <!-- Word Type Filter -->
-                <div class="word-type-filter">
-                    <label for="word-type-select" class="filter-label">Filter by word type:</label>
-                    <select id="word-type-select" class="word-type-dropdown">
-                        <option value="">All types</option>
-                        <option value="noun">Nouns</option>
-                        <option value="verb">Verbs</option>
-                        <option value="adjective">Adjectives</option>
-                    </select>
-                </div>
-
-                <!-- Verb Form Selection Section -->
-                <div id="verb-form-section" class="verb-form-section hidden">
-                    <h4 class="verb-form-heading">Verb Forms</h4>
-
-                    <!-- Tense Selection -->
-                    <div class="form-group">
-                        <label class="form-label">Tenses:</label>
-                        <div class="checkbox-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="tense" value="present" checked> Present
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="tense" value="past"> Past/Aorist
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="tense" value="future"> Future
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="tense" value="other"> Other tenses/moods
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Person/Number Selection -->
-                    <div class="form-group">
-                        <label class="form-label">Person/Number:</label>
-                        <div class="checkbox-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="person" value="1st" checked> 1st person
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="person" value="2nd"> 2nd person
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="person" value="3rd"> 3rd person
-                            </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="person" value="mixed"> Mixed (AI chooses)
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="exercise-type-buttons">
-                    <button id="sentence-exercise-btn" class="btn btn-primary btn-exercise-type">
-                        📝 Sentence Context
-                        <span class="exercise-type-desc">Find the word in a sentence</span>
-                    </button>
+                    <!-- Sentence Context - Expandable Panel -->
+                    <div id="sentence-context-panel" class="exercise-panel">
+                        <div class="exercise-panel-header" id="sentence-context-toggle">
+                            <div class="exercise-panel-info">
+                                <span class="exercise-panel-icon">📝</span>
+                                <div class="exercise-panel-text">
+                                    <span class="exercise-panel-title">Sentence Context</span>
+                                    <span class="exercise-type-desc">Find the word in a sentence</span>
+                                </div>
+                            </div>
+                            <span class="exercise-panel-arrow" id="sentence-context-arrow">▼</span>
+                        </div>
+
+                        <div id="sentence-context-settings" class="exercise-settings hidden">
+                            <!-- Word Type Filter -->
+                            <div class="word-type-filter">
+                                <label for="word-type-select" class="filter-label">Word type:</label>
+                                <select id="word-type-select" class="word-type-dropdown">
+                                    <option value="">All types</option>
+                                    <option value="noun">Nouns</option>
+                                    <option value="verb">Verbs</option>
+                                    <option value="adjective">Adjectives</option>
+                                </select>
+                            </div>
+
+                            <!-- Verb Form Selection Section -->
+                            <div id="verb-form-section" class="verb-form-section hidden">
+                                <h4 class="verb-form-heading">Verb Forms</h4>
+
+                                <!-- Tense Selection -->
+                                <div class="form-group">
+                                    <label class="form-label">Tenses:</label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="tense" value="present" checked> Present
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="tense" value="past"> Past/Aorist
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="tense" value="future"> Future
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="tense" value="other"> Other tenses/moods
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Person/Number Selection -->
+                                <div class="form-group">
+                                    <label class="form-label">Person/Number:</label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="person" value="1st" checked> 1st person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="person" value="2nd"> 2nd person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="person" value="3rd"> 3rd person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="person" value="mixed"> Mixed (AI chooses)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Topic Selection -->
+                            <div class="topic-selection">
+                                <label class="filter-label">Topic:</label>
+                                <div class="topic-chips" id="topic-chips">
+                                    <button class="topic-chip active" data-topic="">🌐 Any</button>
+                                    <button class="topic-chip" data-topic="vacation">🏖 Vacation</button>
+                                    <button class="topic-chip" data-topic="hospital">🏥 Hospital</button>
+                                    <button class="topic-chip" data-topic="home">🏠 Home</button>
+                                    <button class="topic-chip" data-topic="family">👨‍👩‍👧 Family</button>
+                                    <button class="topic-chip" data-topic="work">💼 Work</button>
+                                    <button class="topic-chip" data-topic="school">🎓 School</button>
+                                    <button class="topic-chip" data-topic="food">🍽 Food</button>
+                                    <button class="topic-chip" data-topic="shopping">🛒 Shopping</button>
+                                    <button class="topic-chip" data-topic="travel">✈️ Travel</button>
+                                    <button class="topic-chip" data-topic="nature">🌿 Nature</button>
+                                    <button class="topic-chip" data-topic="sports">⚽ Sports</button>
+                                    <button class="topic-chip" data-topic="friends">👥 Friends</button>
+                                    <button class="topic-chip" data-topic="weather">🌤 Weather</button>
+                                    <button class="topic-chip" data-topic="city">🏙 City</button>
+                                    <button class="topic-chip" data-topic="health issues">❤️ Health issues</button>
+                                    <button class="topic-chip" data-topic="public transport">🚌 Public Transport</button>
+                                    <button class="topic-chip" data-topic="police station">🚔 Police Station</button>
+                                    <button class="topic-chip" data-topic="theatre, ballet, cinema, library">🎭 Theatre & Cinema</button>
+                                    <button class="topic-chip" data-topic="tourist office">🗺 Tourist Office</button>
+                                </div>
+                            </div>
+
+                            <button id="start-sentence-exercise-btn" class="btn btn-success btn-large">Start Exercise</button>
+                        </div>
+                    </div>
+
                     <button id="matching-exercise-btn" class="btn btn-primary btn-exercise-type">
                         🎴 Matching Cards
                         <span class="exercise-type-desc">Match 10 pairs of words</span>
@@ -350,6 +391,6 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?a=1"></script>
 </body>
 </html>

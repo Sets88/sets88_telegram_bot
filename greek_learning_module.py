@@ -326,6 +326,9 @@ class GreekWebApp:
                 }
                 logger.info(f"Verb preferences: {verb_preferences}")
 
+            # Get topic bias (optional)
+            topic = request.rel_url.query.get('topic', '').strip() or None
+
             manager = GreekLearningManager(user['id'])
 
             # Select word
@@ -352,7 +355,7 @@ class GreekWebApp:
                     return web.json_response({'error': 'Invalid direction'}, status=400)
 
             # Generate exercise
-            exercise = await manager.generate_exercise(word, direction, verb_preferences=verb_preferences)
+            exercise = await manager.generate_exercise(word, direction, verb_preferences=verb_preferences, topic=topic)
 
             return web.json_response({
                 'word_id': exercise.word_id,
