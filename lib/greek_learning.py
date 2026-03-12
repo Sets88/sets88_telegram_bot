@@ -23,6 +23,9 @@ from replicate.helpers import FileOutput
 import aiohttp
 
 
+DEFAULT_MODEL = "openai/gpt-5-mini"
+
+
 class ExerciseDirection(Enum):
     """Direction of translation exercise"""
     GREEK_TO_RUSSIAN = "greek_to_russian"
@@ -677,6 +680,7 @@ Requirements:
 - Accurate Russian translations
 - No duplicates from the excluded list{exclusion_text}
 - Modern Greek words (avoid archaic/ancient terms){topic_instruction}
+- Word types are important, possible values are: noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, other
 
 Format your response as a valid JSON object with this structure:
 {{
@@ -692,7 +696,7 @@ Respond ONLY with the JSON object, no additional text."""
         try:
             # Make request to OpenRouter (using GPT-4 mini via OpenRouter)
             response = await openrouter_instance.client.responses.create(
-                model="openai/gpt-5-mini",  # Fast and cheap model via OpenRouter
+                model=DEFAULT_MODEL,  # Fast and cheap model via OpenRouter
                 input=[
                     {"role": "user", "content": prompt}
                 ],
@@ -880,7 +884,7 @@ Respond ONLY with the JSON object, no additional text."""
         try:
             # Make request to OpenRouter
             response = await openrouter_instance.client.responses.create(
-                model="openai/gpt-5-mini",
+                model=DEFAULT_MODEL,
                 input=[
                     {"role": "user", "content": prompt}
                 ],
@@ -947,8 +951,7 @@ Respond ONLY with the JSON object, no additional text."""
             logger.info(f"Using cached word forms for '{greek_word}'")
             return cached_forms
         # If word type is unknown, ask OpenAI to determine it and provide forms
-        if word_type.lower() == 'unknown' or not word_type:
-            prompt = f"""Analyze the Greek word "{greek_word}" and provide its grammatical forms with Russian translations.
+        prompt = f"""Analyze the Greek word "{greek_word}" and provide its grammatical forms with Russian translations.
 
 IMPORTANT: The word "{greek_word}" may be in ANY form (inflected, conjugated, etc.). You must:
 1. Identify the BASE FORM (lemma) of this word
@@ -958,8 +961,8 @@ IMPORTANT: The word "{greek_word}" may be in ANY form (inflected, conjugated, et
 Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
 [
   {{"label": "Lemma", "greek": "base_form_here", "russian": "base form translation"}},
-  {{"label": "Word type", "greek": "base_form_here", "russian": "type in Russian (существительное/глагол/прилагательное)"}},
-  {{"label": "Form description", "greek": "form", "russian": "translation"}},
+  {{"label": "Present 1st person singular", "greek": "κάνω", "russian": "Делаю"}},
+  {{"label": "Present 2nd person singular", "greek": "κάνεις", "russian": "Делаешь"}},
   ...
 ]
 
@@ -973,7 +976,7 @@ Generate all relevant forms:
 Respond ONLY with the JSON array, no additional text."""
 
         # Build prompt based on word type
-        elif word_type.lower() == 'verb':
+        if word_type.lower() == 'verb':
             prompt = f"""Generate all common forms of the Greek verb "{greek_word}" (Russian: {russian_word}) with Russian translations.
 
 IMPORTANT: The word "{greek_word}" may be in ANY form (conjugated). You must:
@@ -1045,18 +1048,10 @@ Include the following forms:
 
 Respond ONLY with the JSON array, no additional text."""
 
-        else:
-            # For other word types, return basic info
-            return [{
-                "label": "Base form",
-                "greek": greek_word,
-                "russian": russian_word
-            }]
-
         try:
             # Make request to OpenRouter
             response = await openrouter_instance.client.responses.create(
-                model="openai/gpt-5-mini",
+                model=DEFAULT_MODEL,
                 input=[
                     {"role": "user", "content": prompt}
                 ],
@@ -1114,7 +1109,7 @@ Respond ONLY with the JSON object, no additional text."""
         try:
             # Make request to OpenRouter
             response = await openrouter_instance.client.responses.create(
-                model="openai/gpt-5-mini",
+                model=DEFAULT_MODEL,
                 input=[
                     {"role": "user", "content": prompt}
                 ],
@@ -1189,6 +1184,7 @@ Provide:
 1. The Russian translation
 2. The word type (noun/verb/adjective/etc.)
 3. Modern Greek form (avoid archaic/ancient terms)
+4. Word types are important, possible values are: noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, other
 
 Format as a valid JSON object:
 {{
@@ -1200,7 +1196,7 @@ Format as a valid JSON object:
 Respond ONLY with the JSON object, no additional text."""
 
                 response = await openrouter_instance.client.responses.create(
-                    model="openai/gpt-5-mini",
+                    model=DEFAULT_MODEL,
                     input=[
                         {"role": "user", "content": prompt}
                     ],
