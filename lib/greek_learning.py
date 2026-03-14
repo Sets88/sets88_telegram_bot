@@ -815,12 +815,15 @@ Respond ONLY with the JSON object, no additional text."""
                         'present': 'present tense (ενεστώτας)',
                         'past': 'past tense/aorist (αόριστος)',
                         'future': 'future tense (μέλλοντας)',
-                        'other': 'other tenses or moods (e.g., perfect, subjunctive, imperative)'
+                        'imperative': 'imperative mood (προστακτική)',
+                        'other': 'other tenses or moods (e.g., perfect, subjunctive)'
                     }
                     tense_descriptions = [tense_map.get(t, t) for t in tenses]
                     verb_instructions += f"- Use the verb in ONE of these tenses: {' OR '.join(tense_descriptions)}\n"
 
-                if persons:
+                # Imperative mood only uses 2nd person — skip person selection in that case
+                only_imperative = tenses == ['imperative']
+                if persons and not only_imperative:
                     person_map = {
                         '1st': '1st person (εγώ, εμείς)',
                         '2nd': '2nd person (εσύ, εσείς)',
@@ -835,6 +838,8 @@ Respond ONLY with the JSON object, no additional text."""
                         # Only one specific person requested
                         person_descriptions = [person_map.get(p, p) for p in persons]
                         verb_instructions += f"- Use this grammatical person: {person_descriptions[0]}\n"
+                elif only_imperative:
+                    verb_instructions += "- Use 2nd person singular or plural (imperative has no other persons)\n"
 
         if direction == ExerciseDirection.GREEK_TO_RUSSIAN:
             # Generate Greek sentence, ask to find Russian translation
