@@ -26,6 +26,36 @@ import aiohttp
 DEFAULT_MODEL = "openai/gpt-5-mini"
 
 
+VERB_FORM_LABELS: list[str] = [
+    "Lemma",
+    "Present / εγώ", "Present / εσύ", "Present / αυτός",
+    "Present / εμείς", "Present / εσείς", "Present / αυτοί",
+    "Aorist / εγώ", "Aorist / εσύ", "Aorist / αυτός",
+    "Aorist / εμείς", "Aorist / εσείς", "Aorist / αυτοί",
+    "Future / εγώ", "Future / εσύ", "Future / αυτός",
+    "Future / εμείς", "Future / εσείς", "Future / αυτοί",
+    "Imperative singular", "Imperative plural",
+    "Participle",
+]
+
+NOUN_FORM_LABELS: list[str] = [
+    "Lemma",
+    "Nominative singular", "Nominative plural",
+    "Genitive singular", "Genitive plural",
+    "Accusative singular", "Accusative plural",
+    "Vocative singular", "Vocative plural",
+]
+
+ADJECTIVE_FORM_LABELS: list[str] = [
+    "Lemma",
+    "Masculine singular", "Masculine plural",
+    "Feminine singular", "Feminine plural",
+    "Neuter singular", "Neuter plural",
+    "Masculine genitive singular", "Feminine genitive singular", "Neuter genitive singular",
+    "Masculine accusative singular", "Feminine accusative singular", "Neuter accusative singular",
+]
+
+
 class ExerciseDirection(Enum):
     """Direction of translation exercise"""
     GREEK_TO_RUSSIAN = "greek_to_russian"
@@ -579,6 +609,16 @@ class GreekLearningManager:
             logger.error(f"Error loading word forms cache for '{greek_word}': {exc}")
             return None
 
+    async def get_word_forms_cached_only(self, word_id: str) -> Optional[List[Dict[str, str]]]:
+        """Return cached word forms without calling AI. Returns None if word not found, [] if no cache."""
+        word = await self.get_word_by_id(word_id)
+        if not word:
+            learned = await self.load_learned_words()
+            word = next((w for w in learned if w.id == word_id), None)
+        if not word:
+            return None
+        return await self.load_word_forms_cache(word.greek)
+
     async def save_word_forms_cache(self, greek: str, russian: str, word_type: str, forms: List[Dict[str, str]]) -> None:
         """Save word forms to cache file based on word hash"""
         async with self._lock:
@@ -955,103 +995,82 @@ Respond ONLY with the JSON object, no additional text."""
         if cached_forms is not None:
             logger.info(f"Using cached word forms for '{greek_word}'")
             return cached_forms
-        # If word type is unknown, ask OpenAI to determine it and provide forms
-        prompt = f"""Analyze the Greek word "{greek_word}" and provide its grammatical forms with Russian translations.
-
-IMPORTANT: The word "{greek_word}" may be in ANY form (inflected, conjugated, etc.). You must:
-1. Identify the BASE FORM (lemma) of this word
-2. Determine what type of word it is (noun, verb, adjective, etc.)
-3. Generate all relevant forms based on the word type
-
-Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
-[
-  {{"label": "Lemma", "greek": "base_form_here", "russian": "base form translation"}},
-  {{"label": "Present 1st person singular", "greek": "κάνω", "russian": "Делаю"}},
-  {{"label": "Present 2nd person singular", "greek": "κάνεις", "russian": "Делаешь"}},
-  ...
-]
-
-For example, if input is "έκανα" (past tense), first element should be lemma "κάνω".
-Generate all relevant forms:
-- For verbs: present, past/aorist, future tenses; 1st, 2nd, 3rd person; singular and plural
-- For nouns: nominative, genitive, accusative cases; singular and plural
-- For adjectives: masculine, feminine, neuter; singular and plural
-- Modern Greek words (avoid archaic/ancient terms)
-
-Respond ONLY with the JSON array, no additional text."""
-
         # Build prompt based on word type
         if word_type.lower() == 'verb':
-            prompt = f"""Generate all common forms of the Greek verb "{greek_word}" (Russian: {russian_word}) with Russian translations.
+            labels_json = '\n'.join(
+                f'  {{"label": "{lbl}", "greek": "...", "russian": "..."}}'
+                for lbl in VERB_FORM_LABELS
+            )
+            prompt = f"""Generate the grammatical forms of the Greek verb "{greek_word}" (Russian: {russian_word}).
 
-IMPORTANT: The word "{greek_word}" may be in ANY form (conjugated). You must:
-1. Identify the BASE FORM (lemma/infinitive) - typically 1st person singular present
-2. Generate all common forms
+Rules:
+1. The input may be any conjugated form — find the lemma (1st person singular present active).
+2. Return EXACTLY these {len(VERB_FORM_LABELS)} entries in this exact order, using the label names verbatim.
+3. If a form does not exist for this verb, use empty strings for "greek" and "russian".
+4. Do NOT add any extra entries beyond this list.
+5. Modern Greek only (no archaic forms).
 
-Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
+Required JSON array:
 [
-  {{"label": "Lemma (1st person singular present)", "greek": "base_form", "russian": "base translation"}},
-  {{"label": "Present 1st person singular (εγώ)", "greek": "form", "russian": "translation"}},
-  {{"label": "Present 2nd person singular (εσύ)", "greek": "form", "russian": "translation"}},
-  ...
+{labels_json}
 ]
 
-Include the following forms:
-1. Present tense: 1st, 2nd, 3rd person singular and plural
-2. Past/Aorist tense: 1st, 2nd, 3rd person singular and plural
-3. Future tense: 1st, 2nd, 3rd person singular and plural
-4. Imperative mood (if applicable)
-5. Participles (if applicable)
-6. Modern Greek forms (avoid archaic/ancient terms)
-
-Respond ONLY with the JSON array, no additional text."""
+Respond ONLY with the JSON array, no other text."""
 
         elif word_type.lower() == 'noun':
-            prompt = f"""Generate all forms of the Greek noun "{greek_word}" (Russian: {russian_word}) with Russian translations.
+            labels_json = '\n'.join(
+                f'  {{"label": "{lbl}", "greek": "...", "russian": "..."}}'
+                for lbl in NOUN_FORM_LABELS
+            )
+            prompt = f"""Generate the grammatical forms of the Greek noun "{greek_word}" (Russian: {russian_word}).
 
-IMPORTANT: The word "{greek_word}" may be in ANY form (case, number). You must:
-1. Identify the BASE FORM (lemma) - typically nominative singular
-2. Generate all forms
+Rules:
+1. The input may be any inflected form — find the lemma (nominative singular).
+2. Return EXACTLY these {len(NOUN_FORM_LABELS)} entries in this exact order, using the label names verbatim.
+3. If a form does not exist (e.g. no plural), use empty strings for "greek" and "russian".
+4. Do NOT add any extra entries beyond this list.
+5. Modern Greek only (no archaic forms).
 
-Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
+Required JSON array:
 [
-  {{"label": "Lemma (Nominative singular)", "greek": "base_form", "russian": "base translation"}},
-  {{"label": "Nominative singular", "greek": "form", "russian": "translation"}},
-  {{"label": "Nominative plural", "greek": "form", "russian": "translation"}},
-  ...
+{labels_json}
 ]
 
-Include the following forms:
-1. Nominative singular and plural
-2. Genitive singular and plural
-3. Accusative singular and plural
-4. Vocative (if different)
-5. Modern Greek forms (avoid archaic/ancient terms)
-
-Respond ONLY with the JSON array, no additional text."""
+Respond ONLY with the JSON array, no other text."""
 
         elif word_type.lower() == 'adjective':
-            prompt = f"""Generate all forms of the Greek adjective "{greek_word}" (Russian: {russian_word}) with Russian translations.
+            labels_json = '\n'.join(
+                f'  {{"label": "{lbl}", "greek": "...", "russian": "..."}}'
+                for lbl in ADJECTIVE_FORM_LABELS
+            )
+            prompt = f"""Generate the grammatical forms of the Greek adjective "{greek_word}" (Russian: {russian_word}).
 
-IMPORTANT: The word "{greek_word}" may be in ANY form (gender, case, number). You must:
-1. Identify the BASE FORM (lemma) - typically masculine nominative singular
-2. Generate all forms
+Rules:
+1. The input may be any inflected form — find the lemma (masculine nominative singular).
+2. Return EXACTLY these {len(ADJECTIVE_FORM_LABELS)} entries in this exact order, using the label names verbatim.
+3. If a form does not exist, use empty strings for "greek" and "russian".
+4. Do NOT add any extra entries beyond this list.
+5. Modern Greek only (no archaic forms).
 
-Format as a valid JSON array where THE FIRST element is ALWAYS the base form (lemma):
+Required JSON array:
 [
-  {{"label": "Lemma (Masculine nominative singular)", "greek": "base_form", "russian": "base translation"}},
-  {{"label": "Masculine singular", "greek": "form", "russian": "translation"}},
-  {{"label": "Feminine singular", "greek": "form", "russian": "translation"}},
-  ...
+{labels_json}
 ]
 
-Include the following forms:
-1. Masculine, feminine, neuter forms
-2. Singular and plural for each gender
-3. Different cases if applicable (nominative, genitive, accusative)
-4. Modern Greek forms (avoid archaic/ancient terms)
+Respond ONLY with the JSON array, no other text."""
 
-Respond ONLY with the JSON array, no additional text."""
+        else:
+            # Unknown word type — ask AI to determine it and produce forms
+            prompt = f"""Analyze the Greek word "{greek_word}" (Russian: {russian_word}) and provide its grammatical forms.
+
+Rules:
+1. The input may be any inflected form — find and return the base form (lemma) FIRST.
+2. Return a JSON array. Each entry must have exactly three keys: "label", "greek", "russian".
+3. Do NOT include meta-entries like "Type", "Note", "Notes on usage" — only actual word forms.
+4. Keep labels short and consistent (e.g. "Nominative singular", "Present / εγώ").
+5. Modern Greek only (no archaic forms).
+
+Respond ONLY with the JSON array, no other text."""
 
         try:
             # Make request to OpenRouter

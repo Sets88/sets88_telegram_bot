@@ -269,14 +269,115 @@
                         </div>
                     </div>
 
-                    <button id="matching-exercise-btn" class="btn btn-primary btn-exercise-type">
-                        🎴 Matching Cards
-                        <span class="exercise-type-desc">Match 10 pairs of words</span>
-                    </button>
-                    <button id="anki-exercise-btn" class="btn btn-primary btn-exercise-type">
-                        🃏 Anki Cards
-                        <span class="exercise-type-desc">Review words with examples</span>
-                    </button>
+                    <!-- Matching Cards - Expandable Panel -->
+                    <div id="matching-cards-panel" class="exercise-panel">
+                        <div class="exercise-panel-header" id="matching-cards-toggle">
+                            <div class="exercise-panel-info">
+                                <span class="exercise-panel-icon">🎴</span>
+                                <div class="exercise-panel-text">
+                                    <span class="exercise-panel-title">Matching Cards</span>
+                                    <span class="exercise-type-desc">Match 10 pairs of words</span>
+                                </div>
+                            </div>
+                            <span class="exercise-panel-arrow" id="matching-cards-arrow">▼</span>
+                        </div>
+                        <div id="matching-cards-settings" class="exercise-settings hidden">
+                            <div class="verb-form-section">
+                                <h4 class="verb-form-heading">Verb Forms (verbs only)</h4>
+                                <div class="form-group">
+                                    <label class="form-label">Tenses:</label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="matching-tense" value="present"> Present
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="matching-tense" value="past"> Past/Aorist
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="matching-tense" value="future"> Future
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="matching-tense" value="imperative"> Imperative
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Person/Number:</label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="matching-person" value="1st"> 1st person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="matching-person" value="2nd"> 2nd person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="matching-person" value="3rd"> 3rd person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="matching-person" value="mixed"> Mixed
+                                        </label>
+                                    </div>
+                                </div>
+                                <p class="verb-form-hint">Leave all unchecked to use base/lemma form (default)</p>
+                            </div>
+                            <button id="start-matching-exercise-btn" class="btn btn-success btn-large">Start Matching</button>
+                        </div>
+                    </div>
+
+                    <!-- Anki Cards - Expandable Panel -->
+                    <div id="anki-cards-panel" class="exercise-panel">
+                        <div class="exercise-panel-header" id="anki-cards-toggle">
+                            <div class="exercise-panel-info">
+                                <span class="exercise-panel-icon">🃏</span>
+                                <div class="exercise-panel-text">
+                                    <span class="exercise-panel-title">Anki Cards</span>
+                                    <span class="exercise-type-desc">Review words with examples</span>
+                                </div>
+                            </div>
+                            <span class="exercise-panel-arrow" id="anki-cards-arrow">▼</span>
+                        </div>
+                        <div id="anki-cards-settings" class="exercise-settings hidden">
+                            <div class="verb-form-section">
+                                <h4 class="verb-form-heading">Verb Forms (verbs only)</h4>
+                                <div class="form-group">
+                                    <label class="form-label">Tenses:</label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="anki-tense" value="present"> Present
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="anki-tense" value="past"> Past/Aorist
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="anki-tense" value="future"> Future
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="anki-tense" value="imperative"> Imperative
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Person/Number:</label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="anki-person" value="1st"> 1st person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="anki-person" value="2nd"> 2nd person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="anki-person" value="3rd"> 3rd person
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" name="anki-person" value="mixed"> Mixed
+                                        </label>
+                                    </div>
+                                </div>
+                                <p class="verb-form-hint">Leave all unchecked to use base/lemma form (default)</p>
+                            </div>
+                            <button id="start-anki-exercise-btn" class="btn btn-success btn-large">Start Anki Cards</button>
+                        </div>
+                    </div>
                 </div>
                 <button id="exercise-type-cancel-btn" class="btn btn-secondary">Cancel</button>
             </div>

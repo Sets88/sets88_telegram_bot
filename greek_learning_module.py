@@ -187,6 +187,7 @@ class GreekWebApp:
         self.app.router.add_patch('/greek/api/words/{word_id}', self.update_word)
         self.app.router.add_get('/greek/api/stats', self.get_stats)
         self.app.router.add_get('/greek/api/word-details/{word_id}', self.get_word_details)
+        self.app.router.add_get('/greek/api/word-forms-cached/{word_id}', self.get_word_forms_cached)
         self.app.router.add_post('/greek/api/word-forms', self.get_word_forms_by_text)
         self.app.router.add_post('/greek/api/translate-russian', self.translate_russian_to_greek)
         self.app.router.add_post('/greek/api/speak', self.generate_speech)
@@ -675,6 +676,26 @@ class GreekWebApp:
 
         except Exception as exc:
             logger.exception(f"Error getting word details: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def get_word_forms_cached(self, request: web.Request) -> web.Response:
+        """GET /greek/api/word-forms-cached/{word_id} - Cache-first, AI fallback"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+        try:
+            word_id = request.match_info['word_id']
+            manager = GreekLearningManager(user['id'])
+            word = await manager.get_word_by_id(word_id)
+            if not word:
+                learned = await manager.load_learned_words()
+                word = next((w for w in learned if w.id == word_id), None)
+            if not word:
+                return web.json_response({'error': 'Word not found'}, status=404)
+            forms = await manager.generate_word_forms(word.greek, word.russian, word.word_type)
+            return web.json_response({'forms': forms or []})
+        except Exception as exc:
+            logger.exception(f"Error getting word forms: {exc}")
             return web.json_response({'error': 'Internal server error'}, status=500)
 
     async def get_word_forms_by_text(self, request: web.Request) -> web.Response:
