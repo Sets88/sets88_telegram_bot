@@ -601,7 +601,10 @@ function renderAnkiCard() {
     const ankiEl = document.getElementById('anki-content');
     ankiEl.classList.remove('hidden');
     ankiEl.innerHTML = `
-        <div class="anki-card">
+        <div class="anki-card" data-word-id="${word.id}">
+            <div class="exercise-hint" style="text-align:center; margin-bottom:8px;">
+                💡 Long press the card to see word forms
+            </div>
             <div class="anki-word-row anki-reveal-row" id="anki-greek-row" onclick="revealAnkiGreek()">
                 <div class="anki-hidden-placeholder">
                     <span class="anki-hidden-lang-label">Greek 🇬🇷</span>
@@ -628,6 +631,7 @@ function renderAnkiCard() {
 
         <div class="anki-controls">
             <button id="anki-example-btn" class="btn btn-secondary" onclick="loadAnkiExample()">📖 Example</button>
+            <button class="btn btn-secondary" onclick="showAnkiWordForms()">📋 Forms</button>
             <button class="btn btn-primary" onclick="nextAnkiCard()">Next →</button>
         </div>
 
@@ -651,6 +655,9 @@ function renderAnkiCard() {
             </div>
         </div>
     `;
+
+    // Attach long press to show word forms
+    attachLongPressToAnkiCard();
 }
 
 function revealAnkiGreek() {
@@ -728,6 +735,49 @@ function nextAnkiCard() {
     state.ankiState.greekRevealed = false;
     state.ankiState.russianRevealed = false;
     renderAnkiCard();
+}
+
+function showAnkiWordForms() {
+    const { words, currentIndex } = state.ankiState;
+    const word = words[currentIndex];
+    if (word && word.id) {
+        showWordDetailsModal(word.id);
+    }
+}
+
+function attachLongPressToAnkiCard() {
+    const card = document.querySelector('.anki-card');
+    if (!card) return;
+
+    let pressTimer = null;
+
+    const startPress = (e) => {
+        if (e.target.closest('.btn-speak') || e.target.closest('.anki-controls')) return;
+        pressTimer = setTimeout(() => {
+            const wordId = card.dataset.wordId;
+            if (wordId) {
+                showWordDetailsModal(wordId);
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.impactOccurred('medium');
+                }
+            }
+        }, 500);
+    };
+
+    const cancelPress = () => {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+    };
+
+    card.addEventListener('touchstart', startPress, { passive: true });
+    card.addEventListener('touchend', cancelPress);
+    card.addEventListener('touchmove', cancelPress);
+    card.addEventListener('touchcancel', cancelPress);
+    card.addEventListener('mousedown', startPress);
+    card.addEventListener('mouseup', cancelPress);
+    card.addEventListener('mouseleave', cancelPress);
 }
 
 async function validateMatchingResults(results) {
