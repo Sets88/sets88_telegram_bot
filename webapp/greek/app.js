@@ -271,9 +271,9 @@ function filterFormsByPreferences(forms, prefs) {
         const l = label.toLowerCase();
         return persons.some(p => {
             if (p === 'mixed') return true;
-            if (p === '1st')   return l.includes('1st person');
-            if (p === '2nd')   return l.includes('2nd person');
-            if (p === '3rd')   return l.includes('3rd person');
+            if (p === '1st')   return l.includes('εγώ') || l.includes('εμείς');
+            if (p === '2nd')   return l.includes('εσύ') || l.includes('εσείς');
+            if (p === '3rd')   return l.includes('αυτός') || l.includes('αυτοί') || l.includes('αυτή') || l.includes('αυτές') || l.includes('αυτό');
             return false;
         });
     };
