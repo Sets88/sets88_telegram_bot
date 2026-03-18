@@ -16,7 +16,7 @@
         });
     </script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="style.css?a=5">
+    <link rel="stylesheet" href="style.css?a=6">
 </head>
 <body>
     <div id="app">
@@ -375,6 +375,15 @@
                                 </div>
                                 <p class="verb-form-hint">Leave all unchecked to use base/lemma form (default)</p>
                             </div>
+                            <div class="form-group">
+                                <label class="form-label">Number of words:</label>
+                                <select id="anki-word-limit" class="word-type-dropdown">
+                                    <option value="10">10</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="all" selected>All</option>
+                                </select>
+                            </div>
                             <button id="start-anki-exercise-btn" class="btn btn-success btn-large">Start Anki Cards</button>
                         </div>
                     </div>
@@ -520,6 +529,6 @@
         </div>
     </div>
 
-    <script src="app.js?a=5"></script>
+    <script src="app.js?a=6"></script>
 </body>
 </html>

@@ -545,12 +545,15 @@ async function startAnkiExercise() {
 
     const shuffled = [...words].sort(() => Math.random() - 0.5);
 
+    const limitValue = document.getElementById('anki-word-limit').value;
+    const limited = limitValue === 'all' ? shuffled : shuffled.slice(0, parseInt(limitValue));
+
     state.exerciseType = 'anki_cards';
     state.exerciseCount = 0;
     showExerciseScreen();
     showExerciseLoading();
 
-    const resolved = await Promise.all(shuffled.map(async w => {
+    const resolved = await Promise.all(limited.map(async w => {
         const form = await resolveWordFormForExercise(w, prefs);
         return { ...w, displayGreek: form.greek, displayRussian: form.russian };
     }));
@@ -1690,6 +1693,10 @@ function hideWordDetailsModal() {
 
 // ========== UI Rendering Functions ==========
 
+function stripAccents(str) {
+    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function filterWords(words, searchQuery) {
     /**
      * Filter words by search query (searches in both Greek and Russian)
@@ -1701,10 +1708,10 @@ function filterWords(words, searchQuery) {
         return words;
     }
 
-    const query = searchQuery.toLowerCase().trim();
+    const query = stripAccents(searchQuery.toLowerCase().trim());
 
     return words.filter(word => {
-        const greekMatch = word.greek.toLowerCase().includes(query);
+        const greekMatch = stripAccents(word.greek.toLowerCase()).includes(query);
         const russianMatch = word.russian.toLowerCase().includes(query);
         return greekMatch || russianMatch;
     });
@@ -1739,6 +1746,8 @@ function renderLearningWords() {
     }
 
     document.getElementById('practice-btn').disabled = false;
+
+    filteredWords.sort((a, b) => a.greek.localeCompare(b.greek, 'el', { sensitivity: 'base' }));
 
     container.innerHTML = filteredWords.map(word => {
         const accuracy = word.exercise_count > 0
@@ -1798,6 +1807,8 @@ function renderLearnedWords() {
         `;
         return;
     }
+
+    filteredWords.sort((a, b) => a.greek.localeCompare(b.greek, 'el', { sensitivity: 'base' }));
 
     container.innerHTML = filteredWords.map(word => {
         const accuracy = word.total_exercises > 0
