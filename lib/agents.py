@@ -56,6 +56,7 @@ class AgentTool(abc.ABC):
     description: str | None = None
     schema: dict[str, ToolParameter] | None = None
     params: dict[str, Any] | None = None
+    top_level_description: str | None = None
 
     def dump(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -364,6 +365,7 @@ class GetWebAppSourceTool(AgentTool):
     type = 'function'
     providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'get_web_app_source'
+    top_level_description = ''
     description = (
         'Returns the HTML source code of a previously created web app by its app_id. '
         'Use this before editing an existing app (own app_id) or to fork another user\'s app as a starting point.'
@@ -405,6 +407,12 @@ class CreateWebAppAgentTool(AgentTool):
     type = 'function'
     providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'create_web_app'
+    top_level_description = (
+        'Creates or updates a web application from a single self-contained HTML file '
+        '(with all JS and CSS embedded inline) and returns the hosted URL plus a Telegram share link. '
+        'To create a new app omit app_id. '
+        'To update YOUR OWN existing app pass its app_id to update that app.'
+    )
     @property
     def description(self) -> str:
         base = getattr(config, 'WEBAPP_BASE_URL', '').rstrip('/')
@@ -580,7 +588,9 @@ class SubAgentTool(AgentTool):
 
     def is_enabled(self, manager: 'ConversationManager', params: dict[str, Any]) -> bool:
         active_tools = self.get_active_tools(manager, params)
-        self.description = self._description + '\n'.join([tool.description for tool in active_tools])
+        self.description = self._description + '\n'.join(
+            [tool.top_level_description if tool.top_level_description is not None else tool.description for tool in active_tools]
+        )
         return bool(active_tools)
             
     async def execute(
