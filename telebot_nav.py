@@ -159,8 +159,9 @@ class TeleBotNav:
         async with self.bot.retrieve_data(message.from_user.id, message.chat.id) as state_data:
             try:
                 message.state_data = state_data
-                if message.content_type == 'text' and message.text.startswith('/') and 'commands' in state_data and message.text[1:] in state_data['commands']:
-                    await state_data['commands'][message.text[1:]]['func'](self, message)
+                cmd_name = message.text[1:].split()[0] if (message.content_type == 'text' and message.text and message.text.startswith('/')) else ''
+                if cmd_name and 'commands' in state_data and cmd_name in state_data['commands']:
+                    await state_data['commands'][cmd_name]['func'](self, message)
                 elif state_data and 'next_handler' in state_data:
                     func = state_data.pop('next_handler')
                     await func(self, message)

@@ -34,6 +34,8 @@ USER_PERMISSIONS = configdata.get('USER_PERMISSIONS', {})
 
 MCP_FETCH_URL = configdata.get('MCP_FETCH_URL', None)
 
-# Greek Learning Web App configuration
-GREEK_LEARNING_WEBAPP_PORT = configdata.get('GREEK_LEARNING_WEBAPP_PORT', 8180)
-GREEK_LEARNING_WEBAPP_URL = configdata.get('GREEK_LEARNING_WEBAPP_URL', 'http://localhost:8180/greek/')
+# Web App server configuration
+WEBAPP_PORT = configdata.get('WEBAPP_PORT', 8180)
+GREEK_LEARNING_WEBAPP_URL = configdata.get('GREEK_LEARNING_WEBAPP_URL', f'http://localhost:{WEBAPP_PORT}/greek/')
+# Base URL for user-generated apps (defaults to the same host as the greek app)
+WEBAPP_BASE_URL = configdata.get('WEBAPP_BASE_URL', f'http://localhost:{WEBAPP_PORT}')

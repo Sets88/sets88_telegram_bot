@@ -20,7 +20,7 @@ from lib.llm import LLM_RESPONSE_TIMEOUT
 from lib.permissions import is_llm_model_allowed, is_permitted, is_replicate_available
 from lib.utils import ConvEncoder, MessageSplitter
 from lib.chat_roles import get_chat_roles
-from lib.agents import OpenAiWebSearchAgentTool, AntropicWebSearchAgentTool, SubAgentTool, AgentTool
+from lib.agents import OpenAiWebSearchAgentTool, AntropicWebSearchAgentTool, SubAgentTool, AgentTool, CreateWebAppAgentTool, GetWebAppSourceTool
 from lib.agents import DEFAULT_DRAWING_MODEL, DIFFUSION_MODELS_IMAGE_FIELDS, OPENAI_IMAGE_MODELS
 from telebot_nav import TeleBotNav
 from logger import logger
@@ -78,7 +78,7 @@ SPEECH_MODELS = [
 ]
 
 DEFAULT_ROLE = 'Assistant'
-DEFAULT_MAX_TOKENS = 8192
+DEFAULT_MAX_TOKENS = 32768
 
 OLD_CONVERSATION_TIMEOUT = 3600 # 1 hour
 

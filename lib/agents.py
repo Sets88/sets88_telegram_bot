@@ -4,10 +4,15 @@ import abc
 from io import BytesIO
 from datetime import datetime
 from typing import Any
+import json
+import os
+import uuid
 
-from telebot.types import Message
+from telebot import types
+from telebot.types import Message, WebAppInfo
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+
 
 import config
 from replicate_module import replicate_execute_and_send
@@ -15,6 +20,7 @@ from lib.permissions import is_replicate_available
 from logger import logger
 from lib.structs import AIProvider, ToolParameter, MessageRole
 from telebot_nav import TeleBotNav, Message
+
 
 if TYPE_CHECKING:
     from lib.llm import ConversationManager
@@ -344,6 +350,189 @@ class FetchUrlAgentTool(AgentTool):
         return 'ERROR'
 
 
+def _apps_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'webapp', 'apps'))
+
+
+def _app_owner(app_id: str) -> str | None:
+    """Extract owner user_id from app_id (format: {user_id}_{uuid})."""
+    parts = app_id.split('_', 1)
+    return parts[0] if len(parts) == 2 and parts[0].isdigit() else None
+
+
+class GetWebAppSourceTool(AgentTool):
+    type = 'function'
+    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
+    name = 'get_web_app_source'
+    description = (
+        'Returns the HTML source code of a previously created web app by its app_id. '
+        'Use this before editing an existing app (own app_id) or to fork another user\'s app as a starting point.'
+    )
+    schema = {
+        'app_id': ToolParameter(
+            name='app_id',
+            description='The app_id of the app to read',
+            ptype=str,
+            required=True,
+        ),
+    }
+
+    def is_enabled(self, manager: 'ConversationManager', params: dict[str, Any]) -> bool:
+        return bool(getattr(config, 'WEBAPP_BASE_URL', None))
+
+    async def execute(
+        self,
+        conversation: 'ConversationManager',
+        params: dict[str, Any],
+    ) -> str:
+        app_id: str | None = params.get('app_id')
+        if not app_id:
+            return json.dumps({'error': 'app_id is required'})
+
+        index_path = os.path.join(_apps_root(), app_id, 'index.html')
+        if not os.path.exists(index_path):
+            return json.dumps({'error': f'App {app_id} not found'})
+
+        try:
+            with open(index_path, 'r', encoding='utf-8') as fh:
+                return fh.read()
+        except Exception as exc:
+            logger.exception(exc)
+            return json.dumps({'error': str(exc)})
+
+
+class CreateWebAppAgentTool(AgentTool):
+    type = 'function'
+    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
+    name = 'create_web_app'
+    @property
+    def description(self) -> str:
+        base = getattr(config, 'WEBAPP_BASE_URL', '').rstrip('/')
+        return (
+            'Creates or updates a web application from a single self-contained HTML file '
+            '(with all JS and CSS embedded inline) and returns the hosted URL plus a Telegram share link. '
+            'To create a new app omit app_id. '
+            'To update YOUR OWN existing app pass its app_id (use get_web_app_source first). '
+            'To build on another user\'s app, read it with get_web_app_source then call this without app_id to fork it. \n'
+            'The html parameter must be a complete, standalone HTML document.\n'
+            'NEVER forget to import telegram js library <script src="https://telegram.org/js/telegram-web-app.js"></script>\n\n'
+            'BACKEND REST APIS (call these from JavaScript inside the web app):\n'
+            f'Base URL: {base}\n'
+            'All requests require header: X-Telegram-Init-Data: window.Telegram.WebApp.initData\n\n'
+            f'POST {base}/api/llm\n'
+            '  Body: {"messages": [{"role":"user","content":"..."}], "system":"optional", "model":"optional"}\n'
+            '  Response: {"text": "..."}\n\n'
+            f'POST {base}/api/replicate\n'
+            '  Body: {"model": "stable-diffusion", "input": {"prompt": "..."}}\n'
+            '  Available models: stable-diffusion, kandinsky, flux-2-max, nano-banana-2,\n'
+            '    seedream-4.5, seedream-5-lite, qwen-image-edit, veo-3.1, veo-3.1-fast,\n'
+            '    real-esrgan, speech-2.8-turbo\n'
+            '  Response: {"output": "url" or ["url1", "url2"]}\n\n'
+            f'GET {base}/api/models\n'
+            '  Response: {"llm": [...], "replicate": [...]}\n'
+            '  Lists only models the current user is permitted to use.\n\n'
+            'JavaScript fetch example:\n'
+            'const res = await fetch(`' + base + '/api/llm`, {\n'
+            '  method: "POST",\n'
+            '  headers: {"Content-Type": "application/json",\n'
+            '            "X-Telegram-Init-Data": window.Telegram.WebApp.initData},\n'
+            '  body: JSON.stringify({messages: [{role:"user", content: prompt}]})\n'
+            '});\n'
+            'const {text} = await res.json();'
+        )
+    schema = {
+        'html': ToolParameter(
+            name='html',
+            description='Complete standalone HTML document with all JS and CSS embedded inline',
+            ptype=str,
+            required=True,
+        ),
+        'title': ToolParameter(
+            name='title',
+            description='Short human-readable title for the app (used in the reply message)',
+            ptype=str,
+            required=False,
+        ),
+        'app_id': ToolParameter(
+            name='app_id',
+            description='Your own app_id to overwrite. Omit to create a new app.',
+            ptype=str,
+            required=False,
+        ),
+    }
+
+    def is_enabled(self, manager: 'ConversationManager', params: dict[str, Any]) -> bool:
+        return bool(getattr(config, 'WEBAPP_BASE_URL', None))
+
+    async def execute(
+        self,
+        conversation: 'ConversationManager',
+        params: dict[str, Any],
+    ) -> str:
+        html: str | None = params.get('html')
+        title: str = params.get('title', 'Web App')
+        botnav: TeleBotNav | None = params.get('botnav')
+        message: Message | None = params.get('message')
+
+        if not html:
+            return json.dumps({'error': 'html parameter is required'})
+
+        current_user_id = str(message.from_user.id) if message else None
+        requested_app_id: str | None = params.get('app_id')
+
+        if requested_app_id:
+            requested_app_id = os.path.basename(requested_app_id)
+            owner_id = _app_owner(requested_app_id)
+            if owner_id != current_user_id:
+                return json.dumps({
+                    'error': 'Permission denied: you can only edit your own apps. '
+                             'Use get_web_app_source + create_web_app (without app_id) to fork it.'
+                })
+            app_id = requested_app_id
+        else:
+            uid = current_user_id or 'anon'
+            app_id = f"{uid}_{uuid.uuid4()}"
+
+        apps_dir = os.path.join(_apps_root(), app_id)
+
+        try:
+            os.makedirs(apps_dir, exist_ok=True)
+            with open(os.path.join(apps_dir, 'index.html'), 'w', encoding='utf-8') as fh:
+                fh.write(html)
+        except Exception as exc:
+            logger.exception(exc)
+            return json.dumps({'error': f'Failed to save app: {exc}'})
+
+        base_url = config.WEBAPP_BASE_URL.rstrip('/')
+        app_url = f"{base_url}/apps/{app_id}/index.html"
+
+        share_link = None
+        if botnav:
+            try:
+                bot_info = await botnav.bot.get_me()
+                share_link = f"https://t.me/{bot_info.username}?start=app_{app_id}"
+            except Exception as exc:
+                logger.exception(exc)
+
+        if botnav and message:
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton(
+                text=f'🌐 Open {title}',
+                web_app=WebAppInfo(url=app_url),
+            ))
+
+            await botnav.bot.send_message(
+                message.chat.id,
+                f'✅ {title} is ready! {share_link}',
+                reply_markup=markup
+            )
+
+        result: dict[str, Any] = {'app_id': app_id}
+        if share_link:
+            result['share_link'] = share_link
+        return json.dumps(result)
+
+
 class SubAgentTool(AgentTool):
     type = 'function'
     providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
@@ -365,7 +554,7 @@ class SubAgentTool(AgentTool):
 
         self.agent_tools = [
            MemoryAgentTool(), FetchUrlAgentTool(), ImageGenerationAgentTool(),
-            GetCurrentTimeAgentTool()
+            GetCurrentTimeAgentTool(), CreateWebAppAgentTool(), GetWebAppSourceTool(),
         ]
 
     def get_active_tools(self, manager: 'ConversationManager', params: dict[str, Any]) -> list[AgentTool]:

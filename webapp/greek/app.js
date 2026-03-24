@@ -1979,14 +1979,10 @@ function renderAvailableWordsForList(listName, searchQuery = '') {
         ...state.learnedWords.filter(w => !wordsInList.has(w.id))
     ];
 
-    // Filter by search
-    if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        availableWords = availableWords.filter(w =>
-            w.greek.toLowerCase().includes(query) ||
-            w.russian.toLowerCase().includes(query)
-        );
-    }
+    // Filter by search (accent-insensitive)
+    availableWords = filterWords(availableWords, searchQuery);
+
+    availableWords.sort((a, b) => a.greek.localeCompare(b.greek, 'el', { sensitivity: 'base' }));
 
     const container = document.getElementById('available-words-container');
 
@@ -1999,7 +1995,7 @@ function renderAvailableWordsForList(listName, searchQuery = '') {
         return;
     }
 
-    container.innerHTML = availableWords.slice(0, 20).map(word => {
+    container.innerHTML = availableWords.map(word => {
         return `
             <div class="word-card">
                 <div class="word-content">
@@ -2012,14 +2008,6 @@ function renderAvailableWordsForList(listName, searchQuery = '') {
             </div>
         `;
     }).join('');
-
-    if (availableWords.length > 20) {
-        container.innerHTML += `
-            <div class="empty-state-text" style="padding: 10px;">
-                Showing first 20 words. Use search to find more.
-            </div>
-        `;
-    }
 }
 
 function renderMatchingExercise() {

@@ -116,56 +116,14 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
 
 class GreekWebApp:
     """
-    aiohttp Web Application for Greek Learning Mini Web App
-    Provides REST API endpoints and serves static files
+    Greek Learning API routes registered onto a shared aiohttp Application.
+    Provides REST API endpoints for Greek word learning.
     """
 
-    def __init__(self, botnav: TeleBotNav):
+    def __init__(self, botnav: TeleBotNav, app: web.Application):
         self.botnav = botnav
-        self.app = web.Application(middlewares=[self._cors_middleware])
+        self.app = app
         self._setup_routes()
-        self._setup_static()
-
-    @web.middleware
-    async def _cors_middleware(self, request, handler):
-        """CORS middleware for development and Telegram WebApp"""
-        if request.method == 'OPTIONS':
-            response = web.Response()
-        else:
-            try:
-                response = await handler(request)
-            except Exception as exc:
-                logger.exception(f"Handler error: {exc}")
-                return web.json_response({'error': str(exc)}, status=500)
-
-        # Add CORS headers
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Telegram-Init-Data'
-
-        # Add security headers for Telegram WebApp
-        # Allow loading Telegram SDK and inline scripts
-        response.headers['Content-Security-Policy'] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://telegram.org; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: https:; "
-            "media-src 'self' blob: https:; "
-            "connect-src 'self' https:; "
-            "frame-ancestors 'none'"
-        )
-
-        # Additional security headers
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Frame-Options'] = 'DENY'
-
-        return response
-
-    def _setup_static(self):
-        """Setup static file serving"""
-        static_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webapp'))
-        self.app.router.add_static('/greek/', path=os.path.join(static_path, 'greek'), name='static')
-        logger.info(f"Serving static files from {static_path}/greek")
 
     def _setup_routes(self):
         """Setup API routes"""
@@ -866,25 +824,3 @@ class GreekWebApp:
             return web.json_response({'error': 'Internal server error'}, status=500)
 
 
-async def start_web_app(botnav: TeleBotNav) -> None:
-    """
-    Start aiohttp web server for Greek Learning Web App
-    Runs in background as async task
-    """
-    try:
-        webapp = GreekWebApp(botnav)
-        runner = web.AppRunner(webapp.app)
-        await runner.setup()
-
-        # Get port from config or use default
-        port = getattr(config, 'GREEK_LEARNING_WEBAPP_PORT', 8080)
-
-        site = web.TCPSite(runner, '0.0.0.0', port)
-        await site.start()
-
-        logger.info(f"🇬🇷 Greek Learning Web App started on http://0.0.0.0:{port}")
-        logger.info(f"   API: http://0.0.0.0:{port}/greek/api/")
-        logger.info(f"   Static: http://0.0.0.0:{port}/greek/")
-
-    except Exception as exc:
-        logger.exception(f"Failed to start Greek Learning Web App: {exc}")
