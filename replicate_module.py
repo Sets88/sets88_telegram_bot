@@ -242,17 +242,17 @@ def build_full_params(model: dict[str, Any], input_data: dict[str, Any]) -> dict
     return result_params
 
 
-def get_model_params(telebot_nav: TeleBotNav, message: Message, model_name: str) -> dict[str, Any]:
+def get_model_params(telebot_nav: TeleBotNav, user_id: int, model_name: str) -> dict[str, Any]:
     if model_name not in REPLICATE_MODELS:
         return {}
 
-    if not is_permitted(telebot_nav, message, 'can_use_replicate_models'):
+    if not is_permitted(user_id, 'can_use_replicate_models'):
         return {}
 
     exclude_models = []
 
-    if not get_permission(telebot_nav, message, 'is_admin'):
-        exclude_models = get_permission(telebot_nav, message, 'exclude_replicate_models')
+    if not get_permission(user_id, 'is_admin'):
+        exclude_models = get_permission(user_id, 'exclude_replicate_models')
 
     if exclude_models and model_name in exclude_models:
         return {}
@@ -269,8 +269,8 @@ def replicate_execute(replicate_id: str, input_data: dict):
     return output
 
 
-async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model_name: str, input_data: dict[str, Any]) -> Any:
-    replicate_model = get_model_params(botnav, message, model_name)
+async def replicate_execute_and_send(botnav: TeleBotNav, user_id: int, model_name: str, input_data: dict[str, Any]) -> Any:
+    replicate_model = get_model_params(botnav, user_id, model_name)
 
     if not replicate_model:
         raise ValueError(f'Unknown model {model_name}')
@@ -278,7 +278,7 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
     request_input_data = build_full_params(replicate_model, input_data)
 
     result = await botnav.await_coro_sending_action(
-        message.chat.id,
+        user_id,
         asyncio.to_thread(replicate_execute, replicate_model['replicate_id'], request_input_data),
         get_await_action_type(replicate_model)
     )
@@ -290,8 +290,8 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
             if isinstance(video, FileOutput):
                 video_to_send = video.url
             await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_video(message.chat.id, video_to_send),
+                user_id,
+                botnav.bot.send_video(user_id, video_to_send),
                 'upload_video'
             )
             result_videos.append(video)
@@ -306,8 +306,8 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
                 image_to_send = photo.url
 
             await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_photo(message.chat.id, image_to_send),
+                user_id,
+                botnav.bot.send_photo(user_id, image_to_send),
                 'upload_photo'
             )
             result_photos.append(photo)
@@ -315,35 +315,35 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
 
     elif isinstance(result, str) and replicate_model['output_type'] == 'photo':
         await botnav.await_coro_sending_action(
-            message.chat.id,
-            botnav.bot.send_photo(message.chat.id, result),
+            user_id,
+            botnav.bot.send_photo(user_id, result),
             'upload_photo'
         )
         return result
 
     elif isinstance(result, str) and replicate_model['output_type'] == 'video':
         await botnav.await_coro_sending_action(
-            message.chat.id,
-            botnav.bot.send_video(message.chat.id, result),
+            user_id,
+            botnav.bot.send_video(user_id, result),
             'upload_video'
         )
     if replicate_model['output_type'] == 'file':
         if isinstance(result, FileOutput):
             await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_document(message.chat.id, result.url, timeout=120),
+                user_id,
+                botnav.bot.send_document(user_id, result.url, timeout=120),
                 'typing'
             )
 
             document = await botnav.await_coro_sending_action(
-                message.chat.id,
+                user_id,
                 download_file(result.url),
                 'upload_document'
             )
 
             await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_document(message.chat.id, document, timeout=120),
+                user_id,
+                botnav.bot.send_document(user_id, document, timeout=120),
                 'upload_document'
             )
 
@@ -353,14 +353,14 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
             document_list = []
             for document_url in result:
                 document = botnav.await_coro_sending_action(
-                    message.chat.id,
+                    user_id,
                     download_file(document_url),
                     'upload_document'
                 )
 
                 await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_document(message.chat.id, document, timeout=120),
+                    user_id,
+                    botnav.bot.send_document(user_id, document, timeout=120),
                     'upload_document'
                 )
                 document_list.append(document)
@@ -368,14 +368,14 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
 
         elif isinstance(result, str):
                 document = await botnav.await_coro_sending_action(
-                    message.chat.id,
+                    user_id,
                     download_file(result),
                     'upload_document'
                 )
 
                 await botnav.await_coro_sending_action(
-                    message.chat.id,
-                    botnav.bot.send_document(message.chat.id, document, timeout=120),
+                    user_id,
+                    botnav.bot.send_document(user_id, document, timeout=120),
                     'upload_document'
                 )
                 return document
@@ -383,29 +383,29 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
         mime_type, _ = mimetypes.guess_type(result.url)
         if mime_type and mime_type.startswith('video'):
             await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_video(message.chat.id, result.url),
+                user_id,
+                botnav.bot.send_video(user_id, result.url),
                 'upload_video'
             )
             return result
 
         elif mime_type and mime_type.startswith('image'):
             await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_photo(message.chat.id, result.url),
+                user_id,
+                botnav.bot.send_photo(user_id, result.url),
                 'upload_photo'
             )
             return result
         else:
             document = await botnav.await_coro_sending_action(
-                message.chat.id,
+                user_id,
                 download_file(result.url),
                 'upload_document'
             )
 
             await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_document(message.chat.id, document, timeout=120),
+                user_id,
+                botnav.bot.send_document(user_id, document, timeout=120),
                 'upload_document'
             )
             return document
@@ -413,13 +413,13 @@ async def replicate_execute_and_send(botnav: TeleBotNav, message: Message, model
     if replicate_model['output_type'] == 'text':
         parts = []
         for part in result:
-            await botnav.send_chat_action(message.chat.id, 'typing')
+            await botnav.send_chat_action(user_id, 'typing')
             parts.append(part)
 
             if len(parts) > 500:
-                await botnav.bot.send_message(message.chat.id, "".join(parts))
+                await botnav.bot.send_message(user_id, "".join(parts))
                 parts = []
-        await botnav.bot.send_message(message.chat.id, "".join(parts))
+        await botnav.bot.send_message(user_id, "".join(parts))
         return "".join(parts)
 
 

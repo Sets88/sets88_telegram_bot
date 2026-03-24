@@ -147,12 +147,12 @@ class ImageGenerationAgentTool(AgentTool):
         }
 
     def is_enabled(self, manager: 'ConversationManager', params: dict[str, Any]) -> bool:
-        message: Message = params.get('message')
-        botnav: TeleBotNav = params.get('botnav')
-        if not message or not botnav:
-            return False
-        return is_replicate_available(botnav, message)
+        user_id: int = params.get('user_id')
 
+        if not user_id:
+            return False
+
+        return is_replicate_available(user_id)
     def get_images_list(self, conversation: 'ConversationManager', images: list[str] | None) -> list[BytesIO]:
         image_bytes_list: list[BytesIO] = []
 
@@ -170,7 +170,7 @@ class ImageGenerationAgentTool(AgentTool):
         self,
         conversation: 'ConversationManager',
         botnav: TeleBotNav,
-        message: Message,
+        user_id: int,
         model: str,
         prompt: str,
         images: list[str] | None = None,
@@ -186,7 +186,7 @@ class ImageGenerationAgentTool(AgentTool):
             input_data[image_field] = image_bytes_list
 
         try:
-            result = await replicate_execute_and_send(botnav, message, model, input_data)
+            result = await replicate_execute_and_send(botnav, user_id, model, input_data)
 
             if result:
                 if isinstance(result, list):
@@ -205,7 +205,7 @@ class ImageGenerationAgentTool(AgentTool):
 
             return 'true'
         except Exception as exc:
-            await botnav.bot.send_message(message.chat.id, "Image generation failed, try again later")
+            await botnav.bot.send_message(user_id, "Image generation failed, try again later")
             logger.exception(exc)
             return 'false'
 
@@ -214,7 +214,7 @@ class ImageGenerationAgentTool(AgentTool):
         self,
         conversation: 'ConversationManager',
         botnav: TeleBotNav,
-        message: Message,
+        user_id: int,
         model: str,
         prompt: str,
         images: list[str] | None = None,
@@ -228,8 +228,8 @@ class ImageGenerationAgentTool(AgentTool):
         )
         for image in result_image:
             await botnav.await_coro_sending_action(
-                message.chat.id,
-                botnav.bot.send_photo(message.chat.id, image),
+                user_id,
+                botnav.bot.send_photo(user_id, image),
                 'upload_photo'
             )
 
@@ -247,12 +247,12 @@ class ImageGenerationAgentTool(AgentTool):
         if (
             'prompt' not in params or
             'botnav' not in params or
-            'message' not in params
+            'user_id' not in params
         ):
             return 'false'
 
         botnav: TeleBotNav = params['botnav']
-        message: Message = params['message']
+        user_id = params['user_id']
         prompt: str = params['prompt']
         images: list[str] | None = params.get('images', None)
 
@@ -260,9 +260,9 @@ class ImageGenerationAgentTool(AgentTool):
 
         try:
             if model in OPENAI_IMAGE_MODELS:
-                return await self.execute_openai(conversation, botnav, message, model, prompt, images)
+                return await self.execute_openai(conversation, botnav, user_id, model, prompt, images)
 
-            return await self.execute_replicate(conversation, botnav, message, model, prompt, images)
+            return await self.execute_replicate(conversation, botnav, user_id, model, prompt, images)
         except Exception as exc:
             logger.exception(exc)
             return 'false'
@@ -472,12 +472,12 @@ class CreateWebAppAgentTool(AgentTool):
         html: str | None = params.get('html')
         title: str = params.get('title', 'Web App')
         botnav: TeleBotNav | None = params.get('botnav')
-        message: Message | None = params.get('message')
+        user_id = params.get('user_id')
 
         if not html:
             return json.dumps({'error': 'html parameter is required'})
 
-        current_user_id = str(message.from_user.id) if message else None
+        current_user_id = str(user_id) if user_id else None
         requested_app_id: str | None = params.get('app_id')
 
         if requested_app_id:
@@ -514,7 +514,7 @@ class CreateWebAppAgentTool(AgentTool):
             except Exception as exc:
                 logger.exception(exc)
 
-        if botnav and message:
+        if botnav:
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton(
                 text=f'🌐 Open {title}',
@@ -522,7 +522,7 @@ class CreateWebAppAgentTool(AgentTool):
             ))
 
             await botnav.bot.send_message(
-                message.chat.id,
+                user_id,
                 f'✅ {title} is ready! {share_link}',
                 reply_markup=markup
             )
@@ -572,11 +572,11 @@ class SubAgentTool(AgentTool):
         params: dict[str, Any],
     ) -> str:
         try:
-            if not params or 'botnav' not in params or 'message' not in params or 'prompt' not in params:
+            if not params or 'botnav' not in params or 'user_id' not in params or 'prompt' not in params:
                 return 'ERROR'
 
             botnav: TeleBotNav = params['botnav']
-            message: Message = params['message']
+            user_id = params['user_id']
             prompt: str = params['prompt']
 
             active_tools = self.get_active_tools(conversation, params)
@@ -585,10 +585,10 @@ class SubAgentTool(AgentTool):
             sub_conversation.set_config_param('system_prompt', SUBAGENT_PROMPT)
 
             sub_conversation.add_message(MessageRole.USER, content=prompt)
-            llm_gen = sub_conversation.make_request(extra_params={'botnav': botnav, 'message': message})
+            llm_gen = sub_conversation.make_request(extra_params={'botnav': botnav, 'user_id': user_id})
 
             async for _ in llm_gen:
-                await botnav.send_chat_action(message.chat.id, 'typing')
+                await botnav.send_chat_action(user_id, 'typing')
 
             for msg in reversed(sub_conversation.messages):
                 if msg.tool_call_id:

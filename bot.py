@@ -76,13 +76,15 @@ async def start(botnav: TeleBotNav, message: Message) -> None:
         await botnav.bot.send_message(message.chat.id, "Build your own bot, here is a source code: https://github.com/Sets88/sets88_telegram_bot")
         return
 
+    user_id = botnav.get_user(message).id
+
     await botnav.print_buttons(
         message.chat.id,
         {
             '🧠 OpenAI': openai_module.start_openai if config.OPENAI_API_KEY else None,
             '🧠 LLM': llm_module.LLMRouter.run if config.OPENAI_API_KEY or config.ANTHROPIC_API_KEY else None,
             '🇬🇷 Greek Learning': greek_learning_module.start_greek if config.GREEK_LEARNING_WEBAPP_URL else None,
-            '💻 Replicate': replicate_module.start_replicate if is_replicate_available(botnav, message) else None,
+            '💻 Replicate': replicate_module.start_replicate if is_replicate_available(user_id) else None,
             '📱 My Web Apps': webapp_apps_module.start_my_apps if config.WEBAPP_BASE_URL else None,
             '📼 Youtube-DL': youtube_dl_module.start_youtube_dl,
             'Tools': tools_module.start_tools,

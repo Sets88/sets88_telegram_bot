@@ -129,6 +129,7 @@ async def send_md_formated_or_plain(botnav: TeleBotNav, message: Message, text: 
 
 def get_available_models(botnav: TeleBotNav, message: Message) -> dict[str, LLMModel]:
     available_models: dict[str, LLMModel] = {}
+    user_id = botnav.get_user(message).id
     for name, model in AVAILABLE_LLM_MODELS.items():
         if model.provider == AIProvider.OPENAI and not config.OPENAI_API_KEY:
             continue
@@ -139,7 +140,7 @@ def get_available_models(botnav: TeleBotNav, message: Message) -> dict[str, LLMM
         if model.provider == AIProvider.OPENROUTER and not config.OPENROUTER_API_KEY:
             continue
 
-        if not is_llm_model_allowed(botnav, message, model):
+        if not is_llm_model_allowed(user_id, model):
             continue
 
         available_models[name] = model
@@ -170,6 +171,7 @@ def set_role(botnav: TeleBotNav, message: Message, conversation: ConversationMan
     system_prompt: str = CHAT_ROLES[role]['system_prompt']
     conversation.set_config_param('system_prompt', system_prompt)
     message.state_data['current_role'] = role
+    user_id = botnav.get_user(message).id
 
     if 'one_off' in CHAT_ROLES[role]:
         conversation.set_config_param('one_off', CHAT_ROLES[role]['one_off'])
@@ -178,7 +180,7 @@ def set_role(botnav: TeleBotNav, message: Message, conversation: ConversationMan
     if 'model' in CHAT_ROLES[role]:
         model: LLMModel = CHAT_ROLES[role]['model']
 
-        if is_llm_model_allowed(botnav, message, model):
+        if is_llm_model_allowed(user_id, model):
             conversation.set_model(model)
         else:
             conversation.set_model(AVAILABLE_LLM_MODELS[config.DEFAULT_LLM_MODEL])
@@ -191,15 +193,16 @@ def get_new_conversation_manager(botnav: TeleBotNav, message: Message) -> Conver
 
     set_role(botnav, message, manager, DEFAULT_ROLE)
     manager.set_config_param('max_tokens', DEFAULT_MAX_TOKENS)
+    user_id = botnav.get_user(message).id
 
-    if is_permitted(botnav, message, 'can_use_tools'):
+    if is_permitted(user_id, 'can_use_tools'):
         tools = [x() for x in DEFAULT_TOOLS]
         manager.set_config_param('tools', tools)
 
-    if is_permitted(botnav, message, 'can_use_memory_tool'):
+    if is_permitted(user_id, 'can_use_memory_tool'):
         manager.set_config_param('memory', True)
 
-    manager.set_user_id(botnav.get_user(message).id)
+    manager.set_user_id(user_id)
     manager.set_config_param('drawing_model', DEFAULT_DRAWING_MODEL)
 
     return manager
@@ -363,8 +366,9 @@ class LLMRouter:
     @classmethod
     async def switch_llm_model(cls, model: LLMModel, botnav: TeleBotNav, message: Message) -> None:
         conversation = get_or_create_conversation(botnav, message)
+        user_id = botnav.get_user(message).id
 
-        if is_llm_model_allowed(botnav, message, model):
+        if is_llm_model_allowed(user_id, model):
             conversation.set_model(model)
 
         await cls.show_chat_options(botnav, message)
@@ -457,7 +461,8 @@ class LLMRouter:
 
     @classmethod
     async def toggle_memory(cls, botnav: TeleBotNav, message: Message) -> None:
-        if not is_permitted(botnav, message, 'can_use_memory_tool'):
+        user_id = botnav.get_user(message).id
+        if not is_permitted(user_id, 'can_use_memory_tool'):
             return
 
         conversation = get_or_create_conversation(botnav, message)
@@ -548,6 +553,7 @@ class LLMRouter:
 
     @classmethod
     async def show_chat_options(cls, botnav: TeleBotNav, message: Message) -> None:
+        user_id = botnav.get_user(message).id
         conversation = get_or_create_conversation(botnav, message)
         one_off_status = "✅" if conversation.config.one_off else "❌"
         max_tokens = conversation.config.max_tokens
@@ -555,11 +561,11 @@ class LLMRouter:
         conversation_length = len(conversation.messages)
         role = message.state_data.get('current_role', DEFAULT_ROLE)
         model = conversation.config.model
-        memory_permited = is_permitted(botnav, message, 'can_use_memory_tool')
+        memory_permited = is_permitted(user_id, 'can_use_memory_tool')
         memory_enabled = "✅" if conversation.config.memory else "❌"
         prettyfy_answers = "✅" if message.state_data.get('prettify_answers', True) else "❌"
         speech_model = message.state_data.get('speech_model', 'Off')
-        drawing_on = conversation.config.drawing_model and is_replicate_available(botnav, message)
+        drawing_on = conversation.config.drawing_model and is_replicate_available(user_id)
         model_title = get_model_title(model)
 
         try:
@@ -682,7 +688,9 @@ class LLMRouter:
             message_splitter = MessageSplitter(2000)
             conversation = get_or_create_conversation(botnav, message)
 
-            llm_gen = conversation.make_request(extra_params={'botnav': botnav, 'message': message})
+            llm_gen = conversation.make_request(
+                extra_params={'botnav': botnav, 'user_id': botnav.get_user(message).id}
+            )
 
             async for reply in llm_gen:
                 await botnav.send_chat_action(message.chat.id, 'typing')

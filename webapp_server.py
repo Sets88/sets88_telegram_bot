@@ -50,28 +50,47 @@ def _authenticate_request(request: web.Request):
     if str(user_id_str) not in config.ALLOWED_USER_IDS:
         logger.error(f"Failed to start shared web app server: Forbidden user {user_id_str}")
         return None, web.json_response({'error': 'Forbidden'}, status=403)
-    return user_id_str, None
+    return int(user_id_str), None
 
 
-async def _llm_complete(messages: list[dict], system: str, model: str | None = None) -> str:
-    from lib.llm import openrouter_instance
-    client = openrouter_instance.client
-    input_msgs = []
+async def _llm_complete(botnav, user_id: int, messages: list[dict], system: str, model: str | None = None) -> str:
+    from llm_module import conversations, AVAILABLE_LLM_MODELS
+    from lib.llm import MessageRole
+
+    base = conversations.get(user_id)
+    if base is None:
+        raise ValueError('No active conversation for this user')
+
+    sub = base.invoke_subagent()
+
     if system:
-        input_msgs.append({'role': 'system', 'content': system})
-    input_msgs.extend(messages)
-    used_model = model or getattr(config, 'DEFAULT_LLM_MODEL', 'gpt-4.1-mini')
-    response = await client.responses.create(
-        model=used_model,
-        input=input_msgs,
-    )
-    return response.output_text
+        sub.set_config_param('system_prompt', system)
+
+    if model and model in AVAILABLE_LLM_MODELS:
+        sub.set_model(AVAILABLE_LLM_MODELS[model])
+
+    for msg in messages:
+        role = MessageRole.USER if msg.get('role') == 'user' else MessageRole.ASSISTANT
+        sub.add_message(role, content=msg.get('content', ''))
+
+    text_parts: list[str] = []
+    async for chunk in sub.make_request(
+        extra_params={
+            "user_id": user_id,
+            "botnav": botnav,
+        }
+    ):
+        if chunk:
+            text_parts.append(chunk)
+
+    return ''.join(text_parts)
 
 
 class WebAppServer:
     """Central aiohttp application shared by all sub-apps."""
 
-    def __init__(self) -> None:
+    def __init__(self, botnav) -> None:
+        self.botnav = botnav
         self.app = web.Application(middlewares=[self._middleware])
         self._setup_static()
         self._setup_routes()
@@ -124,7 +143,7 @@ class WebAppServer:
         self.app.router.add_get('/api/models', self._handle_models)
 
     async def _handle_llm(self, request: web.Request) -> web.Response:
-        user_id_str, err = _authenticate_request(request)
+        user_id, err = _authenticate_request(request)
         if err:
             return err
         try:
@@ -136,15 +155,18 @@ class WebAppServer:
             return web.json_response({'error': 'messages field required'}, status=400)
         system = body.get('system', 'You are a helpful assistant.')
         model = body.get('model')
-        text = await _llm_complete(messages, system, model)
+        try:
+            text = await _llm_complete(self.botnav, user_id, messages, system, model)
+        except ValueError as exc:
+            return web.json_response({'error': str(exc)}, status=503)
         return web.json_response({'text': text})
 
     async def _handle_replicate(self, request: web.Request) -> web.Response:
-        user_id_str, err = _authenticate_request(request)
+        user_id, err = _authenticate_request(request)
         if err:
             return err
-        from lib.permissions import is_replicate_available_for_id, get_allowed_replicate_models_for_id
-        if not is_replicate_available_for_id(user_id_str):
+        from lib.permissions import is_replicate_available, get_allowed_replicate_models
+        if not is_replicate_available(user_id):
             return web.json_response({'error': 'Replicate not available for this user'}, status=403)
         try:
             body = await request.json()
@@ -154,7 +176,7 @@ class WebAppServer:
         input_data = body.get('input', {})
         if not model_name:
             return web.json_response({'error': 'model field required'}, status=400)
-        allowed = get_allowed_replicate_models_for_id(user_id_str)
+        allowed = get_allowed_replicate_models(user_id)
         if model_name not in allowed:
             return web.json_response({'error': f'Model {model_name!r} not allowed'}, status=403)
         from replicate_module import REPLICATE_MODELS, replicate_execute, build_full_params
@@ -173,23 +195,23 @@ class WebAppServer:
         return web.json_response({'output': _serialise(output)})
 
     async def _handle_models(self, request: web.Request) -> web.Response:
-        user_id_str, err = _authenticate_request(request)
+        user_id, err = _authenticate_request(request)
         if err:
             return err
-        from lib.permissions import get_allowed_replicate_models_for_id
+        from lib.permissions import get_allowed_replicate_models
         from llm_module import AVAILABLE_LLM_MODELS, AIProvider
         llm_names = [x for x, y in AVAILABLE_LLM_MODELS.items() if y.provider == AIProvider.OPENROUTER]
-        replicate_names = get_allowed_replicate_models_for_id(user_id_str)
+        replicate_names = get_allowed_replicate_models(user_id)
         return web.json_response({'llm': llm_names, 'replicate': replicate_names})
 
 
 _server: WebAppServer | None = None
 
 
-def get_server() -> WebAppServer:
+def get_server(botnav) -> WebAppServer:
     global _server
     if _server is None:
-        _server = WebAppServer()
+        _server = WebAppServer(botnav)
     return _server
 
 
@@ -198,7 +220,7 @@ async def start_server(botnav) -> None:
     try:
         from greek_learning_module import GreekWebApp
 
-        server = get_server()
+        server = get_server(botnav)
         GreekWebApp(botnav, server.app)
 
         runner = web.AppRunner(server.app)
