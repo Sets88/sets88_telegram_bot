@@ -75,6 +75,30 @@ Use "English Translator" or "Greek" role for quality translations
 **10. Voice messages:**
 Send a voice message - bot will recognize speech and respond
 
+**11. Web app creation:**
+"Create a web app — a calculator with dark theme"
+"Make a todo list app and add sharing"
+Bot will generate a full single-page app and open it right in Telegram
+
+---
+
+🌐 **Web Apps**
+
+The bot can create fully functional web applications accessible directly in Telegram:
+• Just describe what you want — the bot generates a complete HTML/JS/CSS app
+• Apps are hosted automatically and open as Telegram Mini Apps
+• You can request edits: "add a dark theme", "add export to CSV"
+• Apps support AI features (LLM, image generation) via built-in APIs
+• Share your app with other users via a link
+• Manage your apps via **📱 My Web Apps** in the main menu
+
+Examples of apps you can create:
+– Calculators, converters, timers
+– Note-taking, todo lists, habit trackers
+– Mini games (quiz, memory, snake)
+– Data visualisation (charts, tables)
+– AI-powered tools (text summariser, translator, image generator)
+
 ---
 
 💡 **Useful Tips:**

@@ -17,6 +17,31 @@ Personal Telegram bot with a comprehensive AI assistant platform:
 - **Video Downloads**: Support for various video hosting platforms
 - **Meta-language Scheduler**: Automated task execution with custom scripting language
 
+## 🌐 Web App Builder
+The bot can generate and host fully functional web applications directly in Telegram:
+- Just describe what you want in plain language — the bot produces a complete self-contained HTML/JS/CSS app
+- Apps open as **Telegram Mini Apps** inside the chat — no external browser needed
+- Iterate with follow-up messages: "add a dark theme", "export to CSV", "show a bar chart"
+- Built-in REST APIs available to apps running in the browser:
+  - `POST /api/llm` — call any LLM on behalf of the current user
+  - `POST /api/replicate` — run image/video generation models
+  - `GET /api/models` — list models the user is allowed to use
+- Apps can be shared with other users via a Telegram deep-link
+- Manage created apps via **📱 My Web Apps** in the main menu
+
+**Example prompts:**
+```
+Create a dark-themed calculator
+Make a habit tracker with weekly stats chart
+Build a quiz app about world capitals with 10 questions
+Create an AI text summariser that calls the bot's LLM API
+```
+
+### Setup (Optional)
+To enable the Web App Builder, configure the following in `config.json`:
+- `WEBAPP_BASE_URL` — publicly accessible base URL where the server is reachable (e.g. `https://mybot.example.com`)
+- `WEBAPP_PORT` — port for the built-in aiohttp server (default: `8180`)
+
 # Here are a few simple steps to set it up
 
 1. Clone the repository onto the server
