@@ -7,6 +7,7 @@ import hmac
 import hashlib
 import asyncio
 import json as _json
+from pathlib import Path
 from urllib.parse import parse_qsl
 from aiohttp import web
 
@@ -141,6 +142,8 @@ class WebAppServer:
         self.app.router.add_post('/api/llm', self._handle_llm)
         self.app.router.add_post('/api/replicate', self._handle_replicate)
         self.app.router.add_get('/api/models', self._handle_models)
+        self.app.router.add_get('/api/settings/get', self._handle_settings_get)
+        self.app.router.add_post('/api/settings/set', self._handle_settings_set)
 
     async def _handle_llm(self, request: web.Request) -> web.Response:
         user_id, err = _authenticate_request(request)
@@ -203,6 +206,46 @@ class WebAppServer:
         llm_names = [x for x, y in AVAILABLE_LLM_MODELS.items() if y.provider == AIProvider.OPENROUTER]
         replicate_names = get_allowed_replicate_models(user_id)
         return web.json_response({'llm': llm_names, 'replicate': replicate_names})
+
+    def _settings_path(self, app_id: str, user_id: int) -> Path:
+        apps_root = Path(os.path.dirname(__file__)) / 'webapp' / 'apps'
+        return apps_root / app_id / f'{user_id}.json'
+
+    @staticmethod
+    def _is_valid_app_id(app_id: str) -> bool:
+        parts = app_id.split('_', 1)
+        return len(parts) == 2 and parts[0].isdigit()
+
+    async def _handle_settings_get(self, request: web.Request) -> web.Response:
+        user_id, err = _authenticate_request(request)
+        if err:
+            return err
+        app_id = os.path.basename(request.rel_url.query.get('app_id', ''))
+        if not self._is_valid_app_id(app_id):
+            return web.json_response({'error': 'Invalid app_id'}, status=400)
+        path = self._settings_path(app_id, user_id)
+        if not path.exists():
+            return web.json_response({})
+        return web.json_response(_json.loads(path.read_text(encoding='utf-8')))
+
+    async def _handle_settings_set(self, request: web.Request) -> web.Response:
+        user_id, err = _authenticate_request(request)
+        if err:
+            return err
+        app_id = os.path.basename(request.rel_url.query.get('app_id', ''))
+        if not self._is_valid_app_id(app_id):
+            return web.json_response({'error': 'Invalid app_id'}, status=400)
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({'error': 'Invalid JSON'}, status=400)
+        if 'key' not in body:
+            return web.json_response({'error': 'key required'}, status=400)
+        path = self._settings_path(app_id, user_id)
+        settings = _json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+        settings[body['key']] = body.get('value')
+        path.write_text(_json.dumps(settings), encoding='utf-8')
+        return web.json_response({'ok': True})
 
 
 _server: WebAppServer | None = None
