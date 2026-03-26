@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Type
 import abc
 from io import BytesIO
 from datetime import datetime
@@ -558,11 +558,117 @@ class CreateWebAppAgentTool(AgentTool):
         return json.dumps(result)
 
 
+class EditWebAppAgentTool(AgentTool):
+    type = 'function'
+    providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
+    name = 'edit_web_app'
+    top_level_description = ''
+    description = (
+        'Applies targeted find-and-replace edits to an existing web app without rewriting the entire file. '
+        'Use this instead of create_web_app when making small or medium changes to an app you already own. '
+        'You MUST call get_web_app_source first to read the current source before constructing edits.\n\n'
+        'The \'edits\' parameter must be a JSON string containing an array of edit objects:\n'
+        '[{"old": "<exact substring to find>", "new": "<replacement string>"}, ...]\n\n'
+        'Rules:\n'
+        '- Each "old" must appear EXACTLY ONCE in the current file; duplicates are rejected.\n'
+        '- Edits are applied in array order; later edits operate on already-patched content.\n'
+        '- If any edit fails, NO changes are written (all-or-nothing).\n'
+        '- To delete a block, set "new" to "".\n'
+        '- Include enough surrounding context in "old" to make it unique (e.g. the full line).'
+    )
+    schema = {
+        'app_id': ToolParameter(
+            name='app_id',
+            description='The app_id of your own app to edit.',
+            ptype=str,
+            required=True,
+        ),
+        'edits': ToolParameter(
+            name='edits',
+            description=(
+                'A JSON string: array of {"old": "...", "new": "..."} objects. '
+                'Each "old" must be a unique substring of the current file. '
+                'Edits are applied in order.'
+            ),
+            ptype=str,
+            required=True,
+        ),
+    }
+
+    def is_enabled(self, manager: 'ConversationManager', params: dict[str, Any]) -> bool:
+        return bool(getattr(config, 'WEBAPP_BASE_URL', None))
+
+    async def execute(
+        self,
+        conversation: 'ConversationManager',
+        params: dict[str, Any],
+    ) -> str:
+        app_id: str | None = params.get('app_id')
+        if not app_id:
+            return json.dumps({'error': 'app_id is required'})
+
+        app_id = os.path.basename(app_id)
+        current_user_id = str(params.get('user_id')) if params.get('user_id') else None
+        owner_id = _app_owner(app_id)
+        if owner_id != current_user_id:
+            return json.dumps({
+                'error': 'Permission denied: you can only edit your own apps. '
+                         'Use get_web_app_source + create_web_app (without app_id) to fork it.'
+            })
+
+        index_path = os.path.join(_apps_root(), app_id, 'index.html')
+        if not os.path.exists(index_path):
+            return json.dumps({'error': f'App {app_id} not found'})
+
+        try:
+            with open(index_path, 'r', encoding='utf-8') as fh:
+                original = fh.read()
+        except Exception as exc:
+            logger.exception(exc)
+            return json.dumps({'error': f'Failed to read app: {exc}'})
+
+        edits_raw: str | None = params.get('edits')
+        if not edits_raw:
+            return json.dumps({'error': 'edits parameter is required'})
+
+        try:
+            edits = json.loads(edits_raw)
+        except json.JSONDecodeError as exc:
+            return json.dumps({'error': f'edits must be a valid JSON array: {exc}'})
+
+        if not isinstance(edits, list):
+            return json.dumps({'error': 'edits must be a JSON array'})
+
+        patched = original
+        for i, edit in enumerate(edits):
+            if not isinstance(edit, dict) or 'old' not in edit or 'new' not in edit:
+                return json.dumps({'error': f'Edit #{i + 1}: each item must have "old" and "new" keys'})
+            old_str: str = edit['old']
+            new_str: str = edit['new']
+            count = patched.count(old_str)
+            if count == 0:
+                return json.dumps({'error': f'Edit #{i + 1}: "old" string not found in current content'})
+            if count > 1:
+                return json.dumps({
+                    'error': f'Edit #{i + 1}: "old" string is ambiguous ({count} matches); '
+                             'include more surrounding context to make it unique'
+                })
+            patched = patched.replace(old_str, new_str, 1)
+
+        try:
+            with open(index_path, 'w', encoding='utf-8') as fh:
+                fh.write(patched)
+        except Exception as exc:
+            logger.exception(exc)
+            return json.dumps({'error': f'Failed to save app: {exc}'})
+
+        return json.dumps({'ok': True, 'app_id': app_id, 'edits_applied': len(edits)})
+
+
 class SubAgentTool(AgentTool):
     type = 'function'
     providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'subagent'
-    _description = 'An autonomous agent that can use multiple tools to accomplish complex tasks, capabilities are: \n'
     description = ''
     schema = {
         'prompt': ToolParameter(
@@ -572,26 +678,21 @@ class SubAgentTool(AgentTool):
         )
     }
 
+    agent_tools_classes: list[Type[AgentTool]] = []
     agent_tools: list[AgentTool] = []
 
     def __init__(self) -> None:
         super().__init__()
+        self.init_tools()
 
+    def init_tools(self) -> None:
         self.agent_tools = [
-           MemoryAgentTool(), FetchUrlAgentTool(), ImageGenerationAgentTool(),
-            GetCurrentTimeAgentTool(), CreateWebAppAgentTool(), GetWebAppSourceTool(),
+            tool_class() for tool_class in self.agent_tools_classes
         ]
 
     def get_active_tools(self, manager: 'ConversationManager', params: dict[str, Any]) -> list[AgentTool]:
         active_tools = [tool for tool in self.agent_tools if tool.is_enabled(manager, params)]
         return active_tools
-
-    def is_enabled(self, manager: 'ConversationManager', params: dict[str, Any]) -> bool:
-        active_tools = self.get_active_tools(manager, params)
-        self.description = self._description + '\n'.join(
-            [tool.top_level_description if tool.top_level_description is not None else tool.description for tool in active_tools]
-        )
-        return bool(active_tools)
             
     async def execute(
         self,
@@ -625,3 +726,31 @@ class SubAgentTool(AgentTool):
             return 'ERROR'
 
         return 'ERROR'
+
+
+class SubAgentCommonTool(SubAgentTool):
+    _description = 'An autonomous agent that can use multiple tools to accomplish complex tasks, capabilities are: \n'
+
+    agent_tools_classes = [MemoryAgentTool, FetchUrlAgentTool, ImageGenerationAgentTool, GetCurrentTimeAgentTool]
+
+    def is_enabled(self, manager: 'ConversationManager', params: dict[str, Any]) -> bool:
+        active_tools = self.get_active_tools(manager, params)
+        self.description = self._description + '\n'.join(
+            [tool.top_level_description if tool.top_level_description is not None else tool.description for tool in active_tools]
+        )
+
+        return bool(active_tools)
+
+
+class SubAgentWebAppTool(SubAgentCommonTool):
+    name = 'subagent_webapp'
+    description = (
+        'BUILT-IN web app builder: Create or edit web mini-apps/games/tools hosted inside this bot. '
+        'When the user asks to create, modify, update, fix, or improve any app — '
+        'delegate to the subagent with full details and context (what to build or change, existing app_id if editing). '
+        'Do NOT search the internet for apps.\n'
+        'Apps can use backend APIs from JavaScript: LLM text generation, Replicate image/video/audio generation models, '
+        'and per-user settings storage (save/load arbitrary JSON values).'
+    )
+
+    agent_tools_classes = [CreateWebAppAgentTool, GetWebAppSourceTool, EditWebAppAgentTool]

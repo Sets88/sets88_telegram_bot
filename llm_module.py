@@ -20,7 +20,10 @@ from lib.llm import LLM_RESPONSE_TIMEOUT
 from lib.permissions import is_llm_model_allowed, is_permitted, is_replicate_available
 from lib.utils import ConvEncoder, MessageSplitter
 from lib.chat_roles import get_chat_roles
-from lib.agents import OpenAiWebSearchAgentTool, AntropicWebSearchAgentTool, SubAgentTool, AgentTool, CreateWebAppAgentTool, GetWebAppSourceTool
+from lib.agents import (
+    OpenAiWebSearchAgentTool, AntropicWebSearchAgentTool, AgentTool,
+    SubAgentCommonTool, SubAgentWebAppTool
+)
 from lib.agents import DEFAULT_DRAWING_MODEL, DIFFUSION_MODELS_IMAGE_FIELDS, OPENAI_IMAGE_MODELS
 from telebot_nav import TeleBotNav
 from logger import logger
@@ -39,7 +42,7 @@ AVAILABLE_LLM_MODELS = {
     'claude-haiku-4-5': LLMModel(AIProvider.ANTHROPIC, 'claude-haiku-4-5'),
     'claude-sonnet-4-6': LLMModel(AIProvider.ANTHROPIC, 'claude-sonnet-4-6'),
     'claude-opus-4-6': LLMModel(AIProvider.ANTHROPIC, 'claude-opus-4-6'),
-    'gpt-oss:20b': LLMModel(AIProvider.OLLAMA, 'gpt-oss:20b', vision=False),
+    'gpt-oss:20b': LLMModel(AIProvider.OLLAMA, 'gpt-oss-20-128k', vision=False),
     'gemma3:27b': LLMModel(AIProvider.OLLAMA, 'gemma3:27b', tool_calling=False),
     'qwen3.5:35b': LLMModel(AIProvider.OLLAMA, 'qwen3.5:35b'),
     'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', thinking=False, vision=False),
@@ -61,7 +64,7 @@ AVAILABLE_LLM_MODELS = {
 CHAT_ROLES = get_chat_roles(AVAILABLE_LLM_MODELS, config.DEFAULT_LLM_MODEL)
 
 DEFAULT_TOOLS: list[Type[AgentTool]] = [
-    OpenAiWebSearchAgentTool, AntropicWebSearchAgentTool, SubAgentTool
+    OpenAiWebSearchAgentTool, AntropicWebSearchAgentTool, SubAgentCommonTool, SubAgentWebAppTool
 ]
 
 SPEECH_MODELS = [
