@@ -408,10 +408,10 @@ class CreateWebAppAgentTool(AgentTool):
     providers = [AIProvider.OPENAI, AIProvider.ANTHROPIC, AIProvider.OLLAMA, AIProvider.OPENROUTER]
     name = 'create_web_app'
     top_level_description = (
-        'Creates or updates a web application from a single self-contained HTML file '
-        '(with all JS and CSS embedded inline) and returns the hosted URL plus a Telegram share link. '
-        'To create a new app omit app_id. '
-        'To update YOUR OWN existing app pass its app_id to update that app.'
+        'BUILT-IN web app builder: Create or edit web mini-apps/games/tools hosted inside this bot. '
+        'When the user asks to create, modify, update, fix, or improve any app — '
+        'delegate to the subagent with full details and context (what to build or change, existing app_id if editing). '
+        'Do NOT search the internet for apps.'
     )
     @property
     def description(self) -> str:
