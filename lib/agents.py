@@ -705,6 +705,7 @@ class SubAgentTool(AgentTool):
 
             botnav: TeleBotNav = params['botnav']
             user_id = params['user_id']
+            processing_callback = params.get('processing_callback')
             prompt: str = params['prompt']
 
             active_tools = self.get_active_tools(conversation, params)
@@ -713,7 +714,13 @@ class SubAgentTool(AgentTool):
             sub_conversation.set_config_param('system_prompt', SUBAGENT_PROMPT)
 
             sub_conversation.add_message(MessageRole.USER, content=prompt)
-            llm_gen = sub_conversation.make_request(extra_params={'botnav': botnav, 'user_id': user_id})
+            llm_gen = sub_conversation.make_request(
+                extra_params={
+                    'botnav': botnav,
+                    'user_id': user_id,
+                    'processing_callback': processing_callback
+                }
+            )
 
             async for _ in llm_gen:
                 await botnav.send_chat_action(user_id, 'typing')

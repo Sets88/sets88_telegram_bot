@@ -4,7 +4,7 @@ import functools
 import base64
 from time import time
 from datetime import datetime
-from typing import Any, get_args, Literal
+from typing import Any, Coroutine, get_args, Literal, Callable
 from typing import AsyncGenerator, BinaryIO
 from dataclasses import replace
 from abc import ABC, abstractmethod
@@ -716,7 +716,10 @@ class ConversationManager:
             'config': self.config,
         }
 
-    async def make_request(self, extra_params: dict[str, Any]) -> AsyncGenerator[str|None, None]:
+    async def make_request(
+        self,
+        extra_params: dict[str, Any]
+    ) -> AsyncGenerator[str|None, None]:
         if not self.config.model:
             raise ValueError("Model is not set for the conversation.")
 
@@ -801,6 +804,8 @@ class OpenAIInstance:
         for _ in range(3):
             request_data = converter.get_request_parameters(extra_params)
 
+            processing_callback = extra_params.get('processing_callback', None)
+
             try:
                 stream = await self.client.responses.create(**request_data)
             except Exception as exc:
@@ -811,6 +816,9 @@ class OpenAIInstance:
             function_calls: dict[ResponseFunctionToolCall] = {}
 
             async for event in stream:
+                if processing_callback:
+                    await processing_callback()
+
                 if event.type == 'response.incomplete':
                     response = f'I am not able to complete your request at the moment due to {event.response.incomplete_details.reason}'
                     logger.info(response)
@@ -907,10 +915,13 @@ class ClaudeInstance:
         self,
         conversation: ConversationManager,
         converter: RequestDataConverter,
-        extra_params: dict[str, Any]
+        extra_params: dict[str, Any],
+        processing_callback: Callable[[], Coroutine[Any, Any, None]] | None = None
     ) -> AsyncGenerator[str | None, None]:
         for _ in range(3):
             request_data = converter.get_request_parameters(extra_params)
+
+            processing_callback = extra_params.get('processing_callback', None)
 
             try:
                 stream = await self.client.messages.create(**request_data)
@@ -924,6 +935,9 @@ class ClaudeInstance:
             executed: list[tuple[anthropic.types.ToolUseBlock, Any]] = []
 
             async for event in stream:
+                if processing_callback:
+                    await processing_callback()
+
                 if (
                     event.type == 'message_delta' and
                     event.delta.stop_reason != 'tool_use' and
@@ -1035,10 +1049,15 @@ class OllamaInstance:
         self,
         conversation: ConversationManager,
         converter: RequestDataConverter,
-        extra_params: dict[str, Any]
+        extra_params: dict[str, Any],
+        processing_callback: Callable[[], Coroutine[Any, Any, None]] | None = None
     ) -> AsyncGenerator[str, None]:
         for _ in range(3):
             request_data = converter.get_request_parameters(extra_params)
+
+            processing_callback = None
+            if 'processing_callback' in extra_params:
+                processing_callback = extra_params['processing_callback']
 
             full_response: str = ''
             function_calls: list[Any] = []
@@ -1050,6 +1069,9 @@ class OllamaInstance:
                 raise exc
 
             async for event in stream:
+                if processing_callback:
+                    await processing_callback()
+
                 if isinstance(event, ollama.ChatResponse):
                     content = event.message.content
                     if content:

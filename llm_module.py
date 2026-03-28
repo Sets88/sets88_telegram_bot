@@ -692,12 +692,14 @@ class LLMRouter:
             conversation = get_or_create_conversation(botnav, message)
 
             llm_gen = conversation.make_request(
-                extra_params={'botnav': botnav, 'user_id': botnav.get_user(message).id}
+                extra_params={
+                    'botnav': botnav,
+                    'user_id': botnav.get_user(message).id,
+                    'processing_callback': lambda: botnav.send_chat_action(message.chat.id, 'typing')
+                }
             )
 
             async for reply in llm_gen:
-                await botnav.send_chat_action(message.chat.id, 'typing')
-
                 # Flush command
                 if reply is None:
                     for msg in message_splitter.flush():
