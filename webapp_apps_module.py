@@ -56,9 +56,15 @@ async def start_my_apps(botnav: TeleBotNav, message: Message) -> None:
         await botnav.bot.send_message(message.chat.id, "You don't have any web apps yet.")
         return
 
+    apps_buttons = {}
+    for app in apps:
+        if app['title'] in apps_buttons:
+            app['title'] += f" ({app['app_id'][-4:]})"
+        apps_buttons[app['title']] = functools.partial(_show_app, app['app_id'])
+
     await botnav.print_buttons(
         message.chat.id,
-        {app['title']: functools.partial(_show_app, app['app_id']) for app in apps},
+        apps_buttons,
         text=f"Your web apps ({len(apps)}):",
     )
 

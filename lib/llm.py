@@ -23,7 +23,7 @@ from lib.structs import LLMModel, AIProvider, MessageRole, MessageType, Universa
 from logger import logger
 
 
-LLM_RESPONSE_TIMEOUT = 500
+LLM_RESPONSE_TIMEOUT = 5000
 
 
 class RequestDataConverter(ABC):
@@ -353,7 +353,9 @@ class OllamaConverter(RequestDataConverter):
             tools = self.get_tools(extra_params)
             request_data["tools"] = tools
 
-        if not conversation.config.thinking:
+        if conversation.config.thinking and model.thinking:
+            request_data['think'] = True
+        else:
             request_data['think'] = False
 
         return request_data
@@ -573,6 +575,8 @@ class ConversationManager:
 
     def set_model(self, model: LLMModel):
         self.config = replace(self.config, model=model)
+        if model.thinking:
+            self.set_config_param('thinking', True)
 
     def set_config_param(self, param: str, value: Any):
         self.config = replace(self.config, **{param: value})
@@ -916,7 +920,6 @@ class ClaudeInstance:
         conversation: ConversationManager,
         converter: RequestDataConverter,
         extra_params: dict[str, Any],
-        processing_callback: Callable[[], Coroutine[Any, Any, None]] | None = None
     ) -> AsyncGenerator[str | None, None]:
         for _ in range(3):
             request_data = converter.get_request_parameters(extra_params)
@@ -1050,18 +1053,13 @@ class OllamaInstance:
         conversation: ConversationManager,
         converter: RequestDataConverter,
         extra_params: dict[str, Any],
-        processing_callback: Callable[[], Coroutine[Any, Any, None]] | None = None
     ) -> AsyncGenerator[str, None]:
         for _ in range(3):
             request_data = converter.get_request_parameters(extra_params)
-
-            processing_callback = None
-            if 'processing_callback' in extra_params:
-                processing_callback = extra_params['processing_callback']
+            processing_callback = extra_params.get('processing_callback', None)
 
             full_response: str = ''
             function_calls: list[Any] = []
-
             try:
                 stream = await self.client.chat(**request_data)
             except Exception as exc:

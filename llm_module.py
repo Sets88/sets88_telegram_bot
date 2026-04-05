@@ -44,6 +44,7 @@ AVAILABLE_LLM_MODELS = {
     'claude-opus-4-6': LLMModel(AIProvider.ANTHROPIC, 'claude-opus-4-6'),
     'gpt-oss:20b': LLMModel(AIProvider.OLLAMA, 'gpt-oss-20-128k', vision=False),
     'gemma3:27b': LLMModel(AIProvider.OLLAMA, 'gemma3:27b', tool_calling=False),
+    'gemma4:31b': LLMModel(AIProvider.OLLAMA, 'gemma4:31b'),
     'qwen3.5:35b': LLMModel(AIProvider.OLLAMA, 'qwen3.5:35b'),
     'granite4:small-h': LLMModel(AIProvider.OLLAMA, 'granite4:small-h', thinking=False, vision=False),
     'ministral-3:14b': LLMModel(AIProvider.OLLAMA, 'ministral-3:14b', thinking=False),

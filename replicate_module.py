@@ -54,6 +54,13 @@ REPLICATE_MODELS = {
             },
         }
     },
+    'restore-image': {
+        'description': 'Use FLUX Kontext to restore, fix scratches and damage, and colorize old photos',
+        'replicate_id': 'flux-kontext-apps/restore-image',
+        'input_type': 'photo',
+        'output_type': 'photo',
+        'input_field': 'input_image',
+    },
     'kandinsky': {
         'description': 'Kandinsky 2.2, text2img model trained on LAION HighRes and fine-tuned on internal datasets',
         'replicate_id': 'ai-forever/kandinsky-2.2:ea1addaab376f4dc227f5368bbd8eff901820fd1cc14ed8cad63b29249e9d463',
@@ -235,7 +242,7 @@ REPLICATE_MODELS = {
 def build_full_params(model: dict[str, Any], input_data: dict[str, Any]) -> dict[str, Any]:
     result_params = deepcopy(input_data)
 
-    for param_name, param_info in model['available_params'].items():
+    for param_name, param_info in model.get('available_params', {}).items():
         if param_name not in result_params and 'default' in param_info:
             result_params[param_name] = param_info.get('default', None)
 
@@ -649,7 +656,8 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
         input_data[replicate_model.get('input_field', 'image')] = BytesIO(file_content)
 
     try:
-        await replicate_execute_and_send(botnav, message, replicate_model_name, input_data)
+        user_id = botnav.get_user(message).id
+        await replicate_execute_and_send(botnav, user_id, replicate_model_name, input_data)
     except ModelError as exc:
         await botnav.bot.send_message(message.chat.id, f"Model error occurred: {exc}")
     except Exception as exc:
