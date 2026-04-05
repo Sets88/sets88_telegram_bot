@@ -1430,11 +1430,11 @@ h2 {
 
 .anki-rate-btn {
     flex: 1;
-    max-width: 110px;
-    padding: 10px 6px;
+    max-width: 130px;
+    padding: 14px 8px;
     border: none;
-    border-radius: 10px;
-    font-size: 14px;
+    border-radius: 12px;
+    font-size: 16px;
     font-weight: 600;
     cursor: pointer;
     transition: opacity 0.15s;
