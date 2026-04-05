@@ -522,6 +522,40 @@ async function getMatchingExercise(direction = 'greek_to_russian') {
 
 // ========== Anki Cards Exercise ==========
 
+function buildAnkiDeck(words, limitValue) {
+    const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
+
+    const hard   = shuffle(words.filter(w => !w.srs_next_review || w.srs_repetitions === 0));
+    const normal = shuffle(words.filter(w => w.srs_repetitions >= 1 && w.srs_repetitions <= 3));
+    const easy   = shuffle(words.filter(w => w.srs_repetitions >= 4));
+
+    if (limitValue === 'all') {
+        return [...hard, ...normal, ...easy];
+    }
+
+    const total = parseInt(limitValue);
+    const pick = (arr, n) => arr.slice(0, Math.min(n, arr.length));
+
+    const nHard   = Math.round(total * 0.6);
+    const nNormal = Math.round(total * 0.3);
+    const nEasy   = total - nHard - nNormal;
+
+    const pickedHard   = pick(hard,   nHard);
+    const pickedNormal = pick(normal, nNormal);
+    const pickedEasy   = pick(easy,   nEasy);
+
+    const deficit = (nHard - pickedHard.length)
+                  + (nNormal - pickedNormal.length)
+                  + (nEasy - pickedEasy.length);
+
+    const extraHard   = pick(hard.slice(pickedHard.length),     deficit);
+    const extraNormal = pick(normal.slice(pickedNormal.length), deficit - extraHard.length);
+    const extraEasy   = pick(easy.slice(pickedEasy.length),     deficit - extraHard.length - extraNormal.length);
+
+    return shuffle([...pickedHard, ...pickedNormal, ...pickedEasy,
+                    ...extraHard, ...extraNormal, ...extraEasy]);
+}
+
 async function startAnkiExercise() {
     // Get words for this session
     let words = state.learningWords;
@@ -543,14 +577,8 @@ async function startAnkiExercise() {
     const prefs = getAnkiVerbFormPreferences();
     state.ankiVerbFormPreferences = prefs;
 
-    const sorted = [...words].sort((a, b) => {
-        const aNext = a.srs_next_review ? new Date(a.srs_next_review) : new Date(0);
-        const bNext = b.srs_next_review ? new Date(b.srs_next_review) : new Date(0);
-        return aNext - bNext;
-    });
-
     const limitValue = document.getElementById('anki-word-limit').value;
-    const limited = limitValue === 'all' ? sorted : sorted.slice(0, parseInt(limitValue));
+    const limited = buildAnkiDeck(words, limitValue);
 
     state.exerciseType = 'anki_cards';
     state.exerciseCount = 0;
@@ -766,12 +794,8 @@ function nextAnkiCard() {
     const nextIndex = currentIndex + 1;
 
     if (nextIndex >= words.length) {
-        // Re-sort by SRS priority and start over
-        state.ankiState.words = [...words].sort((a, b) => {
-            const aNext = a.srs_next_review ? new Date(a.srs_next_review) : new Date(0);
-            const bNext = b.srs_next_review ? new Date(b.srs_next_review) : new Date(0);
-            return aNext - bNext;
-        });
+        // Reshuffle within SRS buckets and start over
+        state.ankiState.words = buildAnkiDeck(words, 'all');
         state.ankiState.currentIndex = 0;
         tg.showAlert(`Round complete! Starting over with ${words.length} words.`);
     } else {
