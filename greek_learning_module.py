@@ -149,6 +149,7 @@ class GreekWebApp:
         self.app.router.add_post('/greek/api/word-forms', self.get_word_forms_by_text)
         self.app.router.add_post('/greek/api/translate-russian', self.translate_russian_to_greek)
         self.app.router.add_post('/greek/api/speak', self.generate_speech)
+        self.app.router.add_post('/greek/api/anki-rate', self.rate_anki_card)
 
         logger.info("Greek Learning API routes configured")
 
@@ -821,6 +822,31 @@ class GreekWebApp:
 
         except Exception as exc:
             logger.exception(f"Error generating speech: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def rate_anki_card(self, request: web.Request) -> web.Response:
+        """POST /greek/api/anki-rate - Submit SRS rating for an Anki card"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            body = await request.json()
+            word_id = body.get('word_id')
+            rating = body.get('rating')
+
+            if not word_id or rating not in (0, 3, 5):
+                return web.json_response({'error': 'Invalid params'}, status=400)
+
+            manager = GreekLearningManager(user['id'])
+            ok = await manager.update_word_srs(word_id, rating)
+            if not ok:
+                return web.json_response({'error': 'Word not found'}, status=404)
+
+            return web.json_response({'ok': True})
+
+        except Exception as exc:
+            logger.exception(f"Error rating anki card: {exc}")
             return web.json_response({'error': 'Internal server error'}, status=500)
 
 

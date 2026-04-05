@@ -11,7 +11,7 @@ import random
 import re
 import hashlib
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from enum import Enum
 from random import choice
@@ -81,6 +81,10 @@ class Word:
     word_type: str = ""  # e.g., noun, verb, adjective
     last_practiced: Optional[str] = None
     lists: List[str] = None  # List of list IDs this word belongs to
+    srs_interval: int = 1
+    srs_ease_factor: float = 2.5
+    srs_repetitions: int = 0
+    srs_next_review: Optional[str] = None
 
     def __post_init__(self):
         if self.lists is None:
@@ -105,7 +109,9 @@ class Word:
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "Word":
         """Create Word from dictionary"""
-        return Word(**data)
+        known = {f for f in Word.__dataclass_fields__}
+        filtered = {k: v for k, v in data.items() if k in known}
+        return Word(**filtered)
 
 
 @dataclass
@@ -148,6 +154,41 @@ class LearnedWord:
     def from_dict(data: Dict[str, Any]) -> "LearnedWord":
         """Create LearnedWord from dictionary"""
         return LearnedWord(**data)
+
+
+def calculate_srs(word_dict: dict, rating: int) -> dict:
+    """
+    Apply SM-2 spaced repetition to word_dict.
+    rating: 0=Again, 3=Good, 5=Easy
+    Modifies word_dict in-place and returns it.
+    """
+    ef = word_dict.get('srs_ease_factor', 2.5)
+    reps = word_dict.get('srs_repetitions', 0)
+    interval = word_dict.get('srs_interval', 1)
+
+    if rating == 0:  # Again - forgot the word
+        reps = 0
+        interval = 1
+        ef = max(1.3, ef - 0.2)
+    else:
+        if reps == 0:
+            interval = 3 if rating == 3 else 4
+        elif reps == 1:
+            interval = 3 if rating == 3 else 6
+        else:
+            interval = round(interval * ef)
+            if rating == 5:
+                interval = round(interval * 1.3)
+        reps += 1
+        if rating == 5:
+            ef = min(3.0, ef + 0.15)
+
+    next_review = (datetime.utcnow() + timedelta(days=interval)).isoformat() + "Z"
+    word_dict['srs_interval'] = interval
+    word_dict['srs_ease_factor'] = round(ef, 2)
+    word_dict['srs_repetitions'] = reps
+    word_dict['srs_next_review'] = next_review
+    return word_dict
 
 
 @dataclass
@@ -580,6 +621,36 @@ class GreekLearningManager:
                 break
 
         await self.save_words(words)
+
+    async def update_word_srs(self, word_id: str, rating: int) -> bool:
+        """Update SRS fields for a word after Anki rating. rating: 0=Again, 3=Good, 5=Easy"""
+        path = self._get_words_path()
+        if not os.path.exists(path):
+            return False
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return False
+
+        found = False
+        for word in data.get('words', []):
+            if word.get('id') == word_id:
+                calculate_srs(word, rating)
+                found = True
+                break
+
+        if not found:
+            return False
+
+        async with self._lock:
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+            except Exception as exc:
+                logger.error(f"Error saving SRS for user {self.user_id}: {exc}")
+                return False
+        return True
 
     async def update_user_stats(self, direction: ExerciseDirection, is_correct: bool) -> None:
         """Update user statistics after an exercise"""

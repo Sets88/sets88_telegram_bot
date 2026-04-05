@@ -543,10 +543,14 @@ async function startAnkiExercise() {
     const prefs = getAnkiVerbFormPreferences();
     state.ankiVerbFormPreferences = prefs;
 
-    const shuffled = [...words].sort(() => Math.random() - 0.5);
+    const sorted = [...words].sort((a, b) => {
+        const aNext = a.srs_next_review ? new Date(a.srs_next_review) : new Date(0);
+        const bNext = b.srs_next_review ? new Date(b.srs_next_review) : new Date(0);
+        return aNext - bNext;
+    });
 
     const limitValue = document.getElementById('anki-word-limit').value;
-    const limited = limitValue === 'all' ? shuffled : shuffled.slice(0, parseInt(limitValue));
+    const limited = limitValue === 'all' ? sorted : sorted.slice(0, parseInt(limitValue));
 
     state.exerciseType = 'anki_cards';
     state.exerciseCount = 0;
@@ -637,6 +641,14 @@ function renderAnkiCard() {
             <button class="btn btn-secondary" onclick="showAnkiWordForms()">📋 Forms</button>
             <button class="btn btn-primary" onclick="nextAnkiCard()">Next →</button>
         </div>
+        <div id="anki-rating-panel" class="anki-rating-panel hidden">
+            <div class="anki-rating-label">Как ты запомнил слово?</div>
+            <div class="anki-rating-buttons">
+                <button class="anki-rate-btn anki-rate-again" onclick="rateAnkiCard(0)">🔴 Hard</button>
+                <button class="anki-rate-btn anki-rate-good" onclick="rateAnkiCard(3)">🟡 Normal</button>
+                <button class="anki-rate-btn anki-rate-easy" onclick="rateAnkiCard(5)">🟢 Easy</button>
+            </div>
+        </div>
 
         <div id="anki-example-section" class="anki-example-section hidden">
             <div id="anki-example-loading" class="anki-example-loading hidden">
@@ -671,6 +683,7 @@ function revealAnkiGreek() {
     row.classList.remove('anki-reveal-row');
     row.onclick = null;
     state.ankiState.greekRevealed = true;
+    maybeShowRatingPanel();
 }
 
 function revealAnkiRussian() {
@@ -681,6 +694,32 @@ function revealAnkiRussian() {
     row.classList.remove('anki-reveal-row');
     row.onclick = null;
     state.ankiState.russianRevealed = true;
+    maybeShowRatingPanel();
+}
+
+function maybeShowRatingPanel() {
+    if (!state.ankiState.greekRevealed || !state.ankiState.russianRevealed) return;
+    const panel = document.getElementById('anki-rating-panel');
+    if (panel) panel.classList.remove('hidden');
+}
+
+async function rateAnkiCard(rating) {
+    const { words, currentIndex } = state.ankiState;
+    const word = words[currentIndex];
+    // Update local SRS data so re-sort works within the session
+    const now = new Date();
+    const intervals = { 0: 1, 3: 3, 5: 4 };
+    const days = intervals[rating] || 1;
+    word.srs_next_review = new Date(now.getTime() + days * 86400000).toISOString();
+    try {
+        await apiRequest('anki-rate', {
+            method: 'POST',
+            body: JSON.stringify({ word_id: word.id, rating })
+        });
+    } catch (e) {
+        console.error('SRS rating failed', e);
+    }
+    nextAnkiCard();
 }
 
 async function loadAnkiExample() {
@@ -727,8 +766,12 @@ function nextAnkiCard() {
     const nextIndex = currentIndex + 1;
 
     if (nextIndex >= words.length) {
-        // Reshuffle and start over
-        state.ankiState.words = [...words].sort(() => Math.random() - 0.5);
+        // Re-sort by SRS priority and start over
+        state.ankiState.words = [...words].sort((a, b) => {
+            const aNext = a.srs_next_review ? new Date(a.srs_next_review) : new Date(0);
+            const bNext = b.srs_next_review ? new Date(b.srs_next_review) : new Date(0);
+            return aNext - bNext;
+        });
         state.ankiState.currentIndex = 0;
         tg.showAlert(`Round complete! Starting over with ${words.length} words.`);
     } else {

@@ -1408,3 +1408,39 @@ h2 {
     margin-top: 6px;
     font-style: italic;
 }
+
+/* ========== SRS Rating Panel (Anki cards) ========== */
+
+.anki-rating-panel {
+    margin-top: 12px;
+    text-align: center;
+}
+
+.anki-rating-label {
+    font-size: 13px;
+    color: var(--tg-theme-hint-color, #888);
+    margin-bottom: 8px;
+}
+
+.anki-rating-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+.anki-rate-btn {
+    flex: 1;
+    max-width: 110px;
+    padding: 10px 6px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.anki-rate-btn:active { opacity: 0.7; }
+.anki-rate-again { background: #ff4d4d22; color: #e53935; }
+.anki-rate-good  { background: #ffc10722; color: #f9a825; }
+.anki-rate-easy  { background: #4caf5022; color: #2e7d32; }
