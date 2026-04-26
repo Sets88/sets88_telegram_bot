@@ -3166,6 +3166,23 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('#topic-chips .topic-chip').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         state.sentenceTopic = chip.dataset.topic;
+        const customInput = document.getElementById('custom-topic-input');
+        customInput.value = '';
+        customInput.classList.remove('active');
+    });
+
+    // Custom topic input (sentence exercise)
+    document.getElementById('custom-topic-input').addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        document.querySelectorAll('#topic-chips .topic-chip').forEach(c => c.classList.remove('active'));
+        if (val) {
+            e.target.classList.add('active');
+            state.sentenceTopic = val;
+        } else {
+            e.target.classList.remove('active');
+            state.sentenceTopic = '';
+            document.querySelector('#topic-chips .topic-chip[data-topic=""]').classList.add('active');
+        }
     });
 
     // Topic chip selection (fetch words modal)
