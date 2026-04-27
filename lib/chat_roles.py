@@ -470,7 +470,11 @@ def get_chat_roles(available_llm_models: dict[str, 'LLMModel'], default_model_na
         },
         'Greek': {
             'system_prompt': GREEK_PROMPT,
-            'one_off': True
+            'one_off': True,
+            'model': available_llm_models.get(
+                'claude-sonnet-4-6',
+                available_llm_models[default_model_name]
+            ),
         },
         'IT': {
             'system_prompt': IT_PROMPT
