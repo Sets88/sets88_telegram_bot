@@ -756,6 +756,9 @@ class SubAgentWebAppTool(SubAgentCommonTool):
         'When the user asks to create, modify, update, fix, or improve any app — '
         'delegate to the subagent with full details and context (what to build or change, existing app_id if editing). '
         'Do NOT search the internet for apps.\n'
+        'Builder agent has access to API interfeaces provided by the backend for web apps, like'
+        'llm text generation, image generation, settings storage etc.',
+        ', and can use them to create interactive web applications that can be hosted inside this bot. '
         'Apps can use backend APIs from JavaScript: LLM text generation, Replicate image/video/audio generation models, '
         'and per-user settings storage (save/load arbitrary JSON values).'
     )

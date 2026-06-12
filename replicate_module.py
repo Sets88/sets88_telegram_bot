@@ -472,8 +472,8 @@ async def replicate_set_input_param(param_name: str, botnav: TeleBotNav, message
 
 async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav, message: Message):
     model_name, param_name = model_name_param_name.split(':')
-
-    model = get_model_params(botnav, message, model_name)
+    user_id = botnav.get_user(message).id
+    model = get_model_params(botnav, user_id, model_name)
 
     if not model:
         return
@@ -482,13 +482,13 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
         return
 
     param = model['available_params'][param_name]
-    await botnav.bot.delete_message(message.chat.id, message.message_id)
+    await botnav.bot.delete_message(user_id, message.message_id)
 
     if param['type'] == 'bool':
         text = "Please enter bool value 1 for True or 0 for False"
 
         botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
-        await botnav.bot.send_message(message.chat.id, text)
+        await botnav.bot.send_message(user_id, text)
         return
 
 
@@ -504,7 +504,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
             text += f"or leave empty for default value ({param['default']})"
 
         botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
-        await botnav.bot.send_message(message.chat.id, text)
+        await botnav.bot.send_message(user_id, text)
         return
 
     if param['type'] == 'float':
@@ -519,7 +519,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
             text += f"or leave empty for default value ({param['default']})"
 
         botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
-        await botnav.bot.send_message(message.chat.id, text)
+        await botnav.bot.send_message(user_id, text)
         return
 
     if param['type'] == 'str':
@@ -530,7 +530,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
             text += f"or leave empty for default value ({param['default']})"
 
         botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
-        await botnav.bot.send_message(message.chat.id, text)
+        await botnav.bot.send_message(user_id, text)
         return
 
     if param['type'] == 'photo':
@@ -539,7 +539,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
             text += f"({param['description']}) "
 
         botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
-        await botnav.bot.send_message(message.chat.id, text)
+        await botnav.bot.send_message(user_id, text)
         return
 
     if param['type'] == 'photo_list':
@@ -548,7 +548,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
             text += f"({param['description']}) "
 
         botnav.set_next_handler(message, functools.partial(replicate_set_input_param, param_name))
-        await botnav.bot.send_message(message.chat.id, text)
+        await botnav.bot.send_message(user_id, text)
         return
 
     if param['type'] == 'select':
@@ -561,7 +561,7 @@ async def replicate_choose_param(model_name_param_name: str, botnav: TeleBotNav,
         }
 
         await botnav.print_buttons(
-            message.chat.id,
+            user_id,
             buttons,
             text=text,
             row_width=2,
@@ -592,7 +592,8 @@ async def replicate_print_params_buttons(botnav: TeleBotNav, message: Message):
 
 
 async def replicate_choose_model(model_name: str, botnav: TeleBotNav, message: Message) -> None:
-    model = get_model_params(botnav, message, model_name)
+    user_id = botnav.get_user(message).id
+    model = get_model_params(botnav, user_id, model_name)
     if not model:
         return
 
@@ -601,7 +602,7 @@ async def replicate_choose_model(model_name: str, botnav: TeleBotNav, message: M
     message.state_data['replicate_model'] = model_name
     message.state_data['replicate_params'] = default_params
 
-    await botnav.bot.send_message(message.chat.id, "Model has been set to: " + model['description'])
+    await botnav.bot.send_message(user_id, "Model has been set to: " + model['description'])
 
     if model.get('available_params'):
         await replicate_print_params_buttons(botnav, message)
@@ -632,8 +633,9 @@ def get_await_action_type(model):
 
 async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> None:
     replicate_model_name = message.state_data.get('replicate_model', None)
+    user_id = botnav.get_user(message).id
 
-    replicate_model = get_model_params(botnav, message, replicate_model_name)
+    replicate_model = get_model_params(botnav, user_id, replicate_model_name)
 
     if not replicate_model:
         return
@@ -656,21 +658,21 @@ async def replicate_message_handler(botnav: TeleBotNav, message: Message) -> Non
         input_data[replicate_model.get('input_field', 'image')] = BytesIO(file_content)
 
     try:
-        user_id = botnav.get_user(message).id
         await replicate_execute_and_send(botnav, user_id, replicate_model_name, input_data)
     except ModelError as exc:
-        await botnav.bot.send_message(message.chat.id, f"Model error occurred: {exc}")
+        await botnav.bot.send_message(user_id, f"Model error occurred: {exc}")
     except Exception as exc:
-        await botnav.bot.send_message(message.chat.id, "Something went wrong, try again later")
+        await botnav.bot.send_message(user_id, "Something went wrong, try again later")
         logger.exception(exc)
         message.state_data.clear()
 
 
 async def start_replicate(botnav: TeleBotNav, message: Message) -> None:
+    user_id = botnav.get_user(message).id
     await botnav.print_buttons(
-        message.chat.id,
+        user_id,
         {
-            x: functools.partial(replicate_choose_model, x) for x in REPLICATE_MODELS.keys() if get_model_params(botnav, message, x)
+            x: functools.partial(replicate_choose_model, x) for x in REPLICATE_MODELS.keys() if get_model_params(botnav, user_id, x)
         },
         row_width=2,
         text='Choose model:'

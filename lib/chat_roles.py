@@ -475,6 +475,7 @@ def get_chat_roles(available_llm_models: dict[str, 'LLMModel'], default_model_na
                 'claude-sonnet-4-6',
                 available_llm_models[default_model_name]
             ),
+            'thinking': False,
         },
         'IT': {
             'system_prompt': IT_PROMPT
