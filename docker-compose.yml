@@ -13,6 +13,7 @@ services:
       - ./greek_stats:/app/greek_stats
       - ./greek_word_forms:/app/greek_word_forms
       - ./greek_audio_cache:/app/greek_audio_cache
+      - ./greek_quizzes:/app/greek_quizzes
     ports:
       - "8180:8180"
     entrypoint: ["sh", "/app/entrypoint.sh"]

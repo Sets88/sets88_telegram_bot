@@ -52,9 +52,16 @@ import hmac
 import hashlib
 import json
 import random
+import asyncio
 from urllib.parse import parse_qs, unquote
 from aiohttp import web
 import os
+
+from lib.quiz import QuizManager, MAX_SOURCE_CHARS, SESSION_SIZE
+
+
+# Strong references to background quiz-generation tasks so they are not garbage collected
+_BACKGROUND_TASKS: set = set()
 
 
 def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
@@ -151,6 +158,14 @@ class GreekWebApp:
         self.app.router.add_post('/greek/api/speak', self.generate_speech)
         self.app.router.add_post('/greek/api/anki-rate', self.rate_anki_card)
 
+        # Quiz endpoints
+        self.app.router.add_get('/greek/api/quizzes', self.list_quizzes)
+        self.app.router.add_post('/greek/api/quizzes', self.create_quiz)
+        self.app.router.add_get('/greek/api/quizzes/{quiz_id}', self.get_quiz)
+        self.app.router.add_delete('/greek/api/quizzes/{quiz_id}', self.delete_quiz)
+        self.app.router.add_get('/greek/api/quizzes/{quiz_id}/session', self.get_quiz_session)
+        self.app.router.add_post('/greek/api/quizzes/{quiz_id}/result', self.record_quiz_result)
+
         logger.info("Greek Learning API routes configured")
 
     async def _authenticate(self, request: web.Request) -> dict | None:
@@ -158,7 +173,6 @@ class GreekWebApp:
         init_data = request.headers.get('X-Telegram-Init-Data')
 
         logger.info(f"Authentication attempt for {request.path}")
-        logger.info(f"Headers: {dict(request.headers)}")
 
         if not init_data:
             logger.error("No X-Telegram-Init-Data header")
@@ -847,6 +861,161 @@ class GreekWebApp:
 
         except Exception as exc:
             logger.exception(f"Error rating anki card: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    # ========== Quiz Endpoints ==========
+
+    async def list_quizzes(self, request: web.Request) -> web.Response:
+        """GET /greek/api/quizzes - List the user's quizzes (metadata only)"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            manager = QuizManager(user['id'])
+            quizzes = await manager.list_quizzes()
+
+            return web.json_response({
+                'quizzes': quizzes,
+                'total_count': len(quizzes),
+                'max_source_chars': MAX_SOURCE_CHARS
+            })
+
+        except Exception as exc:
+            logger.exception(f"Error listing quizzes: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def create_quiz(self, request: web.Request) -> web.Response:
+        """POST /greek/api/quizzes - Create a quiz from Markdown material"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            body = await request.json()
+            title = body.get('title', '')
+            content = body.get('content', '')
+
+            manager = QuizManager(user['id'])
+
+            try:
+                quiz = await manager.create_quiz(title, content)
+            except ValueError as exc:
+                return web.json_response({'error': str(exc)}, status=400)
+
+            # Generation runs in the background; the client polls for progress
+            task = asyncio.create_task(manager.generate(quiz.id, content))
+            _BACKGROUND_TASKS.add(task)
+            task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+            return web.json_response({'quiz': quiz.meta_dict()})
+
+        except Exception as exc:
+            logger.exception(f"Error creating quiz: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def get_quiz(self, request: web.Request) -> web.Response:
+        """GET /greek/api/quizzes/{quiz_id} - Quiz metadata / generation progress"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            manager = QuizManager(user['id'])
+            quiz = await manager.load_quiz(request.match_info['quiz_id'])
+
+            if quiz is None:
+                return web.json_response({'error': 'Quiz not found'}, status=404)
+
+            return web.json_response({'quiz': quiz.meta_dict()})
+
+        except Exception as exc:
+            logger.exception(f"Error getting quiz: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def delete_quiz(self, request: web.Request) -> web.Response:
+        """DELETE /greek/api/quizzes/{quiz_id} - Delete a quiz"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            manager = QuizManager(user['id'])
+            deleted = await manager.delete_quiz(request.match_info['quiz_id'])
+
+            if not deleted:
+                return web.json_response({'error': 'Quiz not found'}, status=404)
+
+            return web.json_response({'ok': True})
+
+        except Exception as exc:
+            logger.exception(f"Error deleting quiz: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def get_quiz_session(self, request: web.Request) -> web.Response:
+        """GET /greek/api/quizzes/{quiz_id}/session - Random questions with shuffled options"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            quiz_id = request.match_info['quiz_id']
+
+            try:
+                count = int(request.query.get('count', SESSION_SIZE))
+            except ValueError:
+                count = SESSION_SIZE
+            count = max(1, min(100, count))
+
+            manager = QuizManager(user['id'])
+            quiz = await manager.load_quiz(quiz_id)
+
+            if quiz is None:
+                return web.json_response({'error': 'Quiz not found'}, status=404)
+
+            if quiz.status != 'ready':
+                return web.json_response({'error': f'Quiz is not ready yet ({quiz.status})'}, status=409)
+
+            questions = await manager.build_session(quiz_id, count)
+
+            return web.json_response({
+                'quiz_id': quiz.id,
+                'title': quiz.title,
+                'questions': questions
+            })
+
+        except Exception as exc:
+            logger.exception(f"Error building quiz session: {exc}")
+            return web.json_response({'error': 'Internal server error'}, status=500)
+
+    async def record_quiz_result(self, request: web.Request) -> web.Response:
+        """POST /greek/api/quizzes/{quiz_id}/result - Record a finished session"""
+        user = await self._authenticate(request)
+        if not user:
+            return web.json_response({'error': 'Unauthorized'}, status=401)
+
+        try:
+            body = await request.json()
+
+            try:
+                correct = int(body.get('correct'))
+                total = int(body.get('total'))
+            except (TypeError, ValueError):
+                return web.json_response({'error': 'Invalid params'}, status=400)
+
+            if total < 1 or not (0 <= correct <= total):
+                return web.json_response({'error': 'Invalid params'}, status=400)
+
+            manager = QuizManager(user['id'])
+            meta = await manager.record_result(request.match_info['quiz_id'], correct, total)
+
+            if meta is None:
+                return web.json_response({'error': 'Quiz not found'}, status=404)
+
+            return web.json_response({'quiz': meta})
+
+        except Exception as exc:
+            logger.exception(f"Error recording quiz result: {exc}")
             return web.json_response({'error': 'Internal server error'}, status=500)
 
 

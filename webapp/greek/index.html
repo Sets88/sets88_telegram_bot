@@ -16,7 +16,7 @@
         });
     </script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="style.css?a=10">
+    <link rel="stylesheet" href="style.css?a=11">
 </head>
 <body>
     <div id="app">
@@ -32,6 +32,7 @@
                 <button class="tab active" data-tab="learning">Learning</button>
                 <button class="tab" data-tab="learned">Learned</button>
                 <button class="tab" data-tab="lists">Lists</button>
+                <button class="tab" data-tab="quiz">Quiz</button>
                 <button class="tab" data-tab="stats">Stats</button>
             </div>
 
@@ -77,6 +78,16 @@
                     <div id="lists-container" class="lists-container"></div>
                 </div>
 
+                <!-- Quiz Tab -->
+                <div id="quiz-tab" class="tab-panel">
+                    <div class="header">
+                        <h2>Quizzes</h2>
+                        <button id="new-quiz-btn" class="btn btn-primary">+ New Quiz</button>
+                    </div>
+
+                    <div id="quiz-list" class="quiz-list"></div>
+                </div>
+
                 <!-- Stats Tab -->
                 <div id="stats-tab" class="tab-panel">
                     <h2>Statistics</h2>
@@ -119,6 +130,50 @@
                         <button id="result-mark-learned-btn" class="btn btn-success">Изучено</button>
                         <button id="result-next-btn" class="btn btn-primary">Далее</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quiz Screen -->
+        <div id="quiz-screen" class="screen">
+            <div class="exercise-header">
+                <button id="exit-quiz-btn" class="btn btn-secondary">Exit</button>
+                <div id="quiz-counter"></div>
+            </div>
+
+            <div id="quiz-content" class="exercise-content">
+                <div id="quiz-title" class="quiz-session-title"></div>
+                <div id="quiz-question" class="question"></div>
+                <div id="quiz-options" class="options"></div>
+            </div>
+
+            <!-- Final Score -->
+            <div id="quiz-summary" class="quiz-summary hidden"></div>
+
+            <!-- Fixed Bottom Result Panel -->
+            <div id="quiz-result-panel" class="exercise-result-panel hidden">
+                <div class="result-panel-content">
+                    <div id="quiz-verdict" class="result-word-info"></div>
+                    <div id="quiz-explanation" class="result-feedback"></div>
+                    <div class="result-actions">
+                        <button id="quiz-next-btn" class="btn btn-primary">Далее</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create Quiz Modal -->
+        <div id="create-quiz-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>New Quiz</h3>
+                <p>Paste your Markdown material — questions will be generated from it.</p>
+                <input type="text" id="quiz-title-input" class="input" placeholder="Title (optional)">
+                <textarea id="quiz-content-input" class="input quiz-textarea" placeholder="# Paste your markdown here..."></textarea>
+                <div id="quiz-char-counter" class="quiz-char-counter"></div>
+                <div id="create-quiz-error" class="error-message hidden"></div>
+                <div class="modal-buttons">
+                    <button id="create-quiz-cancel-btn" class="btn btn-secondary">Cancel</button>
+                    <button id="create-quiz-confirm-btn" class="btn btn-primary">Generate</button>
                 </div>
             </div>
         </div>
@@ -532,6 +587,6 @@
         </div>
     </div>
 
-    <script src="app.js?a=10"></script>
+    <script src="app.js?a=11"></script>
 </body>
 </html>

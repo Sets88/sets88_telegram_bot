@@ -1470,3 +1470,120 @@ h2 {
 .anki-rate-again { background: #ff4d4d22; color: #e53935; }
 .anki-rate-good  { background: #ffc10722; color: #f9a825; }
 .anki-rate-easy  { background: #4caf5022; color: #2e7d32; }
+
+/* ========== Quiz ========== */
+
+.quiz-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.quiz-card {
+    background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.quiz-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.quiz-card-title {
+    font-size: 17px;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.quiz-delete-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    line-height: 1;
+    padding: 0 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.quiz-card-meta {
+    font-size: 13px;
+    opacity: 0.6;
+    margin-top: 4px;
+}
+
+.quiz-card-score {
+    font-size: 14px;
+    margin-top: 8px;
+}
+
+.quiz-card-status {
+    font-size: 14px;
+    margin-top: 8px;
+}
+
+.quiz-card-status.generating { color: #f9a825; }
+.quiz-card-status.failed { color: #e53935; }
+
+.quiz-progress {
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(0,0,0,0.1);
+    overflow: hidden;
+    margin-top: 12px;
+}
+
+.quiz-progress-bar {
+    height: 100%;
+    background: #4caf50;
+    transition: width 0.3s;
+}
+
+.quiz-textarea {
+    min-height: 220px;
+    font-family: monospace;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.quiz-char-counter {
+    font-size: 13px;
+    opacity: 0.6;
+    margin: -8px 0 12px;
+    text-align: right;
+}
+
+.quiz-char-counter.over {
+    color: #e53935;
+    opacity: 1;
+}
+
+.quiz-session-title {
+    font-size: 13px;
+    opacity: 0.6;
+    margin-bottom: 12px;
+}
+
+.quiz-verdict-correct { color: #2e7d32; font-weight: 600; }
+.quiz-verdict-incorrect { color: #e53935; font-weight: 600; }
+
+.quiz-summary {
+    padding: 40px 20px;
+    text-align: center;
+}
+
+.quiz-summary.hidden { display: none; }
+
+.quiz-summary-score {
+    font-size: 48px;
+    font-weight: 700;
+}
+
+.quiz-summary-percent {
+    font-size: 16px;
+    opacity: 0.7;
+    margin: 8px 0 32px;
+}

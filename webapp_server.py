@@ -92,7 +92,8 @@ class WebAppServer:
 
     def __init__(self, botnav) -> None:
         self.botnav = botnav
-        self.app = web.Application(middlewares=[self._middleware])
+        # 4 MB body limit: quiz material can be a ~150k-char paste (~300 KB UTF-8 + JSON escaping)
+        self.app = web.Application(middlewares=[self._middleware], client_max_size=4 * 1024 ** 2)
         self._setup_static()
         self._setup_routes()
 

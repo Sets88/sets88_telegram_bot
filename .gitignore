@@ -11,3 +11,5 @@ venv.bak/
 config.json
 poetry.lock
 Pipfile.lockgreek_audio_cache/
+greek_quizzes/
+

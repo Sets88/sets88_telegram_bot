@@ -49,8 +49,15 @@ const state = {
         russianRevealed: false
     },
     ankiVerbFormPreferences: { tenses: [], persons: [] },
-    matchingVerbFormPreferences: { tenses: [], persons: [] }
+    matchingVerbFormPreferences: { tenses: [], persons: [] },
+    quizzes: [],
+    quizPollTimer: null,
+    quizSession: null  // {quizId, title, questions, index, correct, answered}
 };
+
+// Must match MAX_SOURCE_CHARS in lib/quiz.py
+const QUIZ_MAX_SOURCE_CHARS = 150000;
+const QUIZ_POLL_INTERVAL_MS = 3000;
 
 // ========== API Helper Functions ==========
 
@@ -2587,6 +2594,305 @@ async function handleOptionClick(selectedOption) {
     }
 }
 
+// ========== Quiz ==========
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text == null ? '' : String(text);
+    return div.innerHTML;
+}
+
+async function loadQuizzes() {
+    try {
+        const data = await apiRequest('quizzes');
+        state.quizzes = data.quizzes || [];
+        renderQuizzes();
+        syncQuizPolling();
+    } catch (error) {
+        console.error('Error loading quizzes:', error);
+        state.quizzes = [];
+        renderQuizzes();
+        stopQuizPolling();
+    }
+}
+
+function renderQuizzes() {
+    const container = document.getElementById('quiz-list');
+    if (!container) return;
+
+    if (state.quizzes.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📝</div>
+                <div class="empty-state-text">No quizzes yet. Paste some material to create one!</div>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = state.quizzes.map(quiz => {
+        const created = quiz.created_at ? new Date(quiz.created_at).toLocaleDateString() : '';
+        const title = escapeHtml(quiz.title);
+        const deleteBtn = `<button class="quiz-delete-btn" onclick="deleteQuiz('${quiz.id}')">🗑</button>`;
+
+        let body;
+        if (quiz.status === 'generating') {
+            const done = quiz.chunks_done || 0;
+            const total = quiz.chunks_total || 1;
+            const percent = Math.round(100 * done / total);
+            body = `
+                <div class="quiz-progress"><div class="quiz-progress-bar" style="width: ${percent}%"></div></div>
+                <div class="quiz-card-status generating">⏳ Generating… ${done}/${total} · ${quiz.question_count} questions so far</div>
+            `;
+        } else if (quiz.status === 'failed') {
+            body = `<div class="quiz-card-status failed">❌ ${escapeHtml(quiz.error || 'Generation failed')}</div>`;
+        } else {
+            const score = quiz.last_score !== null && quiz.last_score !== undefined
+                ? `<div class="quiz-card-score">Last: ${quiz.last_score}/${quiz.last_total} · Best: ${quiz.best_score} · ${quiz.attempts} attempt(s)</div>`
+                : '';
+            body = `
+                ${score}
+                <button class="btn btn-success btn-large" onclick="startQuiz('${quiz.id}')">Start Quiz</button>
+            `;
+        }
+
+        return `
+            <div class="quiz-card">
+                <div class="quiz-card-header">
+                    <div class="quiz-card-title">📄 ${title}</div>
+                    ${deleteBtn}
+                </div>
+                <div class="quiz-card-meta">${quiz.question_count} questions · ${created}</div>
+                ${body}
+            </div>
+        `;
+    }).join('');
+}
+
+function syncQuizPolling() {
+    const isGenerating = state.quizzes.some(quiz => quiz.status === 'generating');
+
+    if (isGenerating && !state.quizPollTimer) {
+        state.quizPollTimer = setInterval(loadQuizzes, QUIZ_POLL_INTERVAL_MS);
+    } else if (!isGenerating) {
+        stopQuizPolling();
+    }
+}
+
+function stopQuizPolling() {
+    if (state.quizPollTimer) {
+        clearInterval(state.quizPollTimer);
+        state.quizPollTimer = null;
+    }
+}
+
+function showCreateQuizModal() {
+    document.getElementById('quiz-title-input').value = '';
+    document.getElementById('quiz-content-input').value = '';
+    document.getElementById('create-quiz-error').classList.add('hidden');
+    updateQuizCharCounter();
+    document.getElementById('create-quiz-modal').classList.remove('hidden');
+}
+
+function hideCreateQuizModal() {
+    document.getElementById('create-quiz-modal').classList.add('hidden');
+}
+
+function updateQuizCharCounter() {
+    const length = document.getElementById('quiz-content-input').value.length;
+    const counter = document.getElementById('quiz-char-counter');
+    const confirmBtn = document.getElementById('create-quiz-confirm-btn');
+    const tooBig = length > QUIZ_MAX_SOURCE_CHARS;
+
+    counter.textContent = `${length.toLocaleString()} / ${QUIZ_MAX_SOURCE_CHARS.toLocaleString()} characters`;
+    counter.classList.toggle('over', tooBig);
+    confirmBtn.disabled = tooBig || length === 0;
+}
+
+async function createQuiz() {
+    const title = document.getElementById('quiz-title-input').value.trim();
+    const content = document.getElementById('quiz-content-input').value;
+    const errorEl = document.getElementById('create-quiz-error');
+    const confirmBtn = document.getElementById('create-quiz-confirm-btn');
+
+    errorEl.classList.add('hidden');
+    confirmBtn.disabled = true;
+
+    try {
+        await apiRequest('quizzes', {
+            method: 'POST',
+            body: JSON.stringify({ title, content })
+        });
+
+        hideCreateQuizModal();
+        await loadQuizzes();
+
+    } catch (error) {
+        console.error('Error creating quiz:', error);
+        errorEl.textContent = error.message;
+        errorEl.classList.remove('hidden');
+    } finally {
+        confirmBtn.disabled = false;
+    }
+}
+
+async function deleteQuiz(quizId) {
+    const confirmed = await new Promise(resolve => {
+        if (tg?.showConfirm) {
+            tg.showConfirm('Delete this quiz?', resolve);
+        } else {
+            resolve(confirm('Delete this quiz?'));
+        }
+    });
+
+    if (!confirmed) return;
+
+    try {
+        await apiRequest(`quizzes/${quizId}`, { method: 'DELETE' });
+        await loadQuizzes();
+    } catch (error) {
+        console.error('Error deleting quiz:', error);
+        tg?.showAlert('Failed to delete quiz: ' + error.message);
+    }
+}
+
+async function startQuiz(quizId) {
+    stopQuizPolling();
+
+    try {
+        const data = await apiRequest(`quizzes/${quizId}/session`);
+
+        if (!data.questions || data.questions.length === 0) {
+            tg?.showAlert('This quiz has no questions yet');
+            return;
+        }
+
+        state.quizSession = {
+            quizId: quizId,
+            title: data.title,
+            questions: data.questions,
+            index: 0,
+            correct: 0,
+            answered: false
+        };
+
+        document.getElementById('quiz-summary').classList.add('hidden');
+        document.getElementById('quiz-content').style.display = 'block';
+        showScreen('quiz-screen');
+        renderQuizQuestion();
+
+    } catch (error) {
+        console.error('Error starting quiz:', error);
+        tg?.showAlert('Failed to start quiz: ' + error.message);
+    }
+}
+
+function renderQuizQuestion() {
+    const session = state.quizSession;
+    if (!session) return;
+
+    const question = session.questions[session.index];
+    session.answered = false;
+
+    document.getElementById('quiz-counter').textContent = `${session.index + 1} / ${session.questions.length}`;
+    document.getElementById('quiz-title').textContent = session.title;
+    document.getElementById('quiz-question').textContent = question.question;
+
+    document.getElementById('quiz-options').innerHTML = question.options.map((option, i) => `
+        <button class="option-btn" data-index="${i}" onclick="handleQuizOptionClick(${i})">${escapeHtml(option)}</button>
+    `).join('');
+
+    document.getElementById('quiz-result-panel').classList.add('hidden');
+}
+
+function handleQuizOptionClick(selectedIndex) {
+    const session = state.quizSession;
+    if (!session || session.answered) return;
+
+    session.answered = true;
+
+    const question = session.questions[session.index];
+    const isCorrect = selectedIndex === question.correct_index;
+    const buttons = document.querySelectorAll('#quiz-options .option-btn');
+
+    buttons.forEach((btn, i) => {
+        btn.disabled = true;
+        if (i === question.correct_index) {
+            btn.classList.add('correct');
+        } else if (i === selectedIndex) {
+            btn.classList.add('incorrect');
+        }
+    });
+
+    if (isCorrect) {
+        session.correct++;
+    }
+
+    if (tg?.HapticFeedback) {
+        tg.HapticFeedback.notificationOccurred(isCorrect ? 'success' : 'error');
+    }
+
+    document.getElementById('quiz-verdict').innerHTML = isCorrect
+        ? '<span class="quiz-verdict-correct">✅ Правильно</span>'
+        : `<span class="quiz-verdict-incorrect">❌ Неправильно</span> — ${escapeHtml(question.options[question.correct_index])}`;
+    document.getElementById('quiz-explanation').textContent = question.explanation;
+
+    const isLast = session.index === session.questions.length - 1;
+    document.getElementById('quiz-next-btn').textContent = isLast ? 'Результат' : 'Далее';
+    document.getElementById('quiz-result-panel').classList.remove('hidden');
+}
+
+function nextQuizQuestion() {
+    const session = state.quizSession;
+    if (!session) return;
+
+    if (session.index >= session.questions.length - 1) {
+        finishQuiz();
+        return;
+    }
+
+    session.index++;
+    renderQuizQuestion();
+}
+
+async function finishQuiz() {
+    const session = state.quizSession;
+    if (!session) return;
+
+    const total = session.questions.length;
+    const percent = Math.round(100 * session.correct / total);
+
+    document.getElementById('quiz-result-panel').classList.add('hidden');
+    document.getElementById('quiz-content').style.display = 'none';
+
+    const summary = document.getElementById('quiz-summary');
+    summary.innerHTML = `
+        <div class="quiz-summary-score">${session.correct} / ${total}</div>
+        <div class="quiz-summary-percent">${percent}% правильных ответов</div>
+        <button class="btn btn-success btn-large" onclick="startQuiz('${session.quizId}')">Пройти снова</button>
+        <button class="btn btn-secondary btn-large" onclick="exitQuiz()">К списку квизов</button>
+    `;
+    summary.classList.remove('hidden');
+
+    try {
+        await apiRequest(`quizzes/${session.quizId}/result`, {
+            method: 'POST',
+            body: JSON.stringify({ correct: session.correct, total: total })
+        });
+    } catch (error) {
+        console.error('Error recording quiz result:', error);
+    }
+}
+
+function exitQuiz() {
+    state.quizSession = null;
+    document.getElementById('quiz-summary').classList.add('hidden');
+    document.getElementById('quiz-result-panel').classList.add('hidden');
+    document.getElementById('quiz-content').style.display = 'block';
+    showScreen('main-screen');
+    loadQuizzes();
+}
+
 // ========== Screen Management ==========
 
 function showScreen(screenId) {
@@ -2652,6 +2958,11 @@ function switchTab(tabName) {
     });
     document.getElementById(`${tabName}-tab`).classList.add('active');
 
+    // Stop polling when leaving the quiz tab
+    if (tabName !== 'quiz') {
+        stopQuizPolling();
+    }
+
     // Load data for the tab
     if (tabName === 'learning') {
         loadWords();
@@ -2660,6 +2971,8 @@ function switchTab(tabName) {
     } else if (tabName === 'lists') {
         state.lists = getAllListNames();
         renderLists();
+    } else if (tabName === 'quiz') {
+        loadQuizzes();
     } else if (tabName === 'stats') {
         loadStats();
     }
@@ -2968,6 +3281,24 @@ document.addEventListener('DOMContentLoaded', () => {
             switchTab(tab.dataset.tab);
         });
     });
+
+    // Quiz: new quiz button - use event delegation to handle dynamic content
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'new-quiz-btn' || e.target.closest('#new-quiz-btn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            showCreateQuizModal();
+        }
+    });
+
+    // Quiz: create quiz modal
+    document.getElementById('quiz-content-input').addEventListener('input', updateQuizCharCounter);
+    document.getElementById('create-quiz-confirm-btn').addEventListener('click', createQuiz);
+    document.getElementById('create-quiz-cancel-btn').addEventListener('click', hideCreateQuizModal);
+
+    // Quiz: session screen
+    document.getElementById('quiz-next-btn').addEventListener('click', nextQuizQuestion);
+    document.getElementById('exit-quiz-btn').addEventListener('click', exitQuiz);
 
     // Fetch words button - use event delegation to handle dynamic content
     document.addEventListener('click', (e) => {
@@ -3403,3 +3734,7 @@ window.addWordToListUI = addWordToListUI;
 window.removeWordFromListUI = removeWordFromListUI;
 window.showEditWordModal = showEditWordModal;
 window.playSpeech = playSpeech;
+window.startQuiz = startQuiz;
+window.deleteQuiz = deleteQuiz;
+window.handleQuizOptionClick = handleQuizOptionClick;
+window.exitQuiz = exitQuiz;
