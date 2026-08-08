@@ -31,24 +31,63 @@ MAX_OPTIONS = 6
 SESSION_SIZE = 20
 GENERATION_CONCURRENCY = 8
 
+# Telegram language_code -> (human-readable name, writing system)
+LANGUAGES: Dict[str, tuple] = {
+    'ru': ('Russian', 'cyrillic'),
+    'uk': ('Ukrainian', 'cyrillic'),
+    'be': ('Belarusian', 'cyrillic'),
+    'bg': ('Bulgarian', 'cyrillic'),
+    'sr': ('Serbian', 'cyrillic'),
+    'el': ('Greek', 'greek'),
+    'en': ('English', 'latin'),
+    'de': ('German', 'latin'),
+    'fr': ('French', 'latin'),
+    'es': ('Spanish', 'latin'),
+    'it': ('Italian', 'latin'),
+    'pt': ('Portuguese', 'latin'),
+    'pl': ('Polish', 'latin'),
+    'tr': ('Turkish', 'latin'),
+}
+DEFAULT_LANGUAGE = 'ru'
+
 
 @dataclass
 class QuizQuestion:
-    """A single multiple-choice question"""
+    """A single multiple-choice question, optionally mirrored in a second language"""
     id: str
     question: str
     options: List[str]
     correct_index: int
     explanation: str
+    # Translation into the quiz's target language. `options_translated` is index-aligned
+    # with `options`, so shuffling must permute both together.
+    question_translated: Optional[str] = None
+    options_translated: Optional[List[str]] = None
+    explanation_translated: Optional[str] = None
+
+    @property
+    def has_translation(self) -> bool:
+        return bool(self.question_translated and self.options_translated)
 
     @staticmethod
-    def create(question: str, options: List[str], correct_index: int, explanation: str) -> "QuizQuestion":
+    def create(
+        question: str,
+        options: List[str],
+        correct_index: int,
+        explanation: str,
+        question_translated: Optional[str] = None,
+        options_translated: Optional[List[str]] = None,
+        explanation_translated: Optional[str] = None,
+    ) -> "QuizQuestion":
         return QuizQuestion(
             id=str(uuid.uuid4()),
             question=question,
             options=options,
             correct_index=correct_index,
-            explanation=explanation
+            explanation=explanation,
+            question_translated=question_translated,
+            options_translated=options_translated,
+            explanation_translated=explanation_translated
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -77,16 +116,30 @@ class Quiz:
     last_score: Optional[int] = None
     last_total: Optional[int] = None
     best_score: Optional[int] = None
+    source_language: Optional[str] = None   # human-readable, e.g. "Greek"
+    target_language: Optional[str] = None   # None when the quiz is monolingual
+
+    @property
+    def has_translation(self) -> bool:
+        return bool(self.target_language) and any(q.has_translation for q in self.questions)
 
     @staticmethod
-    def create(title: str, source_chars: int, chunks_total: int) -> "Quiz":
+    def create(
+        title: str,
+        source_chars: int,
+        chunks_total: int,
+        source_language: Optional[str] = None,
+        target_language: Optional[str] = None,
+    ) -> "Quiz":
         return Quiz(
             id=str(uuid.uuid4()),
             title=title,
             created_at=datetime.utcnow().isoformat() + "Z",
             status='generating',
             source_chars=source_chars,
-            chunks_total=chunks_total
+            chunks_total=chunks_total,
+            source_language=source_language,
+            target_language=target_language
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -97,6 +150,7 @@ class Quiz:
         data = asdict(self)
         data.pop('questions', None)
         data['question_count'] = len(self.questions)
+        data['has_translation'] = self.has_translation
         return data
 
     @staticmethod
@@ -221,6 +275,51 @@ def normalize_question(text: str) -> str:
     return re.sub(r'\W+', ' ', text.lower()).strip()
 
 
+def detect_script(text: str) -> Optional[str]:
+    """
+    Detect the dominant writing system of a text: 'greek', 'cyrillic' or 'latin'.
+    Cheap and deterministic - enough to tell whether a translation is worth generating.
+    """
+    counts = {
+        'greek': len(re.findall(r'[Ͱ-Ͽἀ-῿]', text)),
+        'cyrillic': len(re.findall(r'[Ѐ-ӿ]', text)),
+        'latin': len(re.findall(r'[A-Za-z]', text)),
+    }
+
+    total = sum(counts.values())
+    if total < 20:
+        return None
+
+    script, count = max(counts.items(), key=lambda kv: kv[1])
+    return script if count / total > 0.5 else None
+
+
+def resolve_language(code: Optional[str]) -> tuple:
+    """Map a Telegram language_code to (name, script). Unknown codes keep their own name."""
+    code = (code or '').split('-')[0].lower()
+
+    if code in LANGUAGES:
+        return LANGUAGES[code]
+    if code:
+        return (code, None)
+
+    return LANGUAGES[DEFAULT_LANGUAGE]
+
+
+def needs_translation(content: str, target_code: Optional[str]) -> bool:
+    """False when the material is already written in the target language"""
+    if not target_code:
+        return False
+
+    _, target_script = resolve_language(target_code)
+    source_script = detect_script(content)
+
+    if source_script is None or target_script is None:
+        return True  # can't tell - translating is the safe default
+
+    return source_script != target_script
+
+
 def validate_question(raw: Dict[str, Any]) -> Optional[QuizQuestion]:
     """Validate one LLM-produced question. Returns None (and logs) if it is malformed."""
     try:
@@ -248,7 +347,17 @@ def validate_question(raw: Dict[str, Any]) -> Optional[QuizQuestion]:
         logger.error(f"Quiz question correct_index {correct_index} out of range: {raw}")
         return None
 
-    return QuizQuestion.create(question, options, correct_index, explanation)
+    # The translation is optional: a bad one is dropped, the question itself still counts
+    q_tr = str(raw.get('question_translated') or '').strip() or None
+    e_tr = str(raw.get('explanation_translated') or '').strip() or None
+    o_tr = [str(o).strip() for o in (raw.get('options_translated') or [])]
+
+    if len(o_tr) != len(options) or not all(o_tr) or not q_tr:
+        if q_tr or o_tr:
+            logger.error(f"Dropping malformed translation for question: {question!r}")
+        q_tr, o_tr, e_tr = None, None, None
+
+    return QuizQuestion.create(question, options, correct_index, explanation, q_tr, o_tr or None, e_tr)
 
 
 class QuizManager:
@@ -362,9 +471,10 @@ class QuizManager:
 
     # ========== Quiz Creation & Generation ==========
 
-    async def create_quiz(self, title: str, content: str) -> Quiz:
+    async def create_quiz(self, title: str, content: str, target_code: Optional[str] = None) -> Quiz:
         """
         Create a quiz record in 'generating' state. Raises ValueError on invalid material.
+        `target_code` is a language code to mirror the questions into ('' / None = monolingual).
         The caller is responsible for scheduling `generate()`.
         """
         content = (content or '').strip()
@@ -379,16 +489,26 @@ class QuizManager:
         if not chunks:
             raise ValueError('Could not split the material into anything usable')
 
+        # Only translate when the material is actually in a different writing system
+        target_language = None
+        if needs_translation(content, target_code):
+            target_language, _ = resolve_language(target_code)
+
+        source_script = detect_script(content)
+
         quiz = Quiz.create(
             title=(title or '').strip() or derive_title(content),
             source_chars=len(content),
-            chunks_total=len(chunks)
+            chunks_total=len(chunks),
+            source_language=source_script,
+            target_language=target_language
         )
         await self.save_quiz(quiz)
 
         logger.info(
             f"Created quiz {quiz.id} ({quiz.title!r}) for user {self.user_id}: "
-            f"{len(content)} chars, {len(chunks)} chunks"
+            f"{len(content)} chars, {len(chunks)} chunks, script={source_script}, "
+            f"translate_to={target_language or 'none'}"
         )
         return quiz
 
@@ -398,13 +518,16 @@ class QuizManager:
         Aborts silently if the quiz file disappears (user deleted it mid-generation).
         """
         try:
+            quiz = await self.load_quiz(quiz_id)
+            target_language = quiz.target_language if quiz else None
+
             chunks = split_markdown(content)
             counts = plan_question_counts(chunks)
             semaphore = asyncio.Semaphore(GENERATION_CONCURRENCY)
 
             async def worker(chunk: str, count: int) -> List[QuizQuestion]:
                 async with semaphore:
-                    return await self._generate_chunk(chunk, count)
+                    return await self._generate_chunk(chunk, count, target_language)
 
             tasks = [asyncio.create_task(worker(c, n)) for c, n in zip(chunks, counts)]
 
@@ -457,8 +580,30 @@ class QuizManager:
                 quiz.error = str(exc)
                 await self.save_quiz(quiz)
 
-    async def _generate_chunk(self, chunk: str, count: int) -> List[QuizQuestion]:
+    async def _generate_chunk(
+        self,
+        chunk: str,
+        count: int,
+        target_language: Optional[str] = None
+    ) -> List[QuizQuestion]:
         """Generate `count` questions from one chunk of material via OpenRouter"""
+        if target_language:
+            translation_rules = f"""
+- Additionally translate every question into {target_language}:
+  "question_translated", "options_translated" and "explanation_translated"
+- "options_translated" must have the SAME number of entries as "options", in the SAME
+  ORDER, so that index N means the same answer in both languages
+- Translate the MEANING, not word by word. Keep proper nouns and technical terms
+  recognisable, adding the original in parentheses where it helps"""
+            translation_fields = (
+                ', "question_translated": "...", '
+                '"options_translated": ["...", "...", "...", "..."], '
+                '"explanation_translated": "..."'
+            )
+        else:
+            translation_rules = ''
+            translation_fields = ''
+
         prompt = f"""You are creating a multiple-choice quiz from study material.
 
 MATERIAL:
@@ -481,12 +626,12 @@ Requirements:
 - Questions must be self-contained: never refer to "the text", "the material" or "above"
 - "correct_index" is the 0-based index of the correct option
 - "explanation" is 1-2 sentences saying why the correct answer is right
-- Write questions, options and explanations in the SAME LANGUAGE as the material
+- Write questions, options and explanations in the SAME LANGUAGE as the material{translation_rules}
 
 Format as a valid JSON object:
 {{
   "questions": [
-    {{"question": "...", "options": ["...", "...", "...", "..."], "correct_index": 0, "explanation": "..."}}
+    {{"question": "...", "options": ["...", "...", "...", "..."], "correct_index": 0, "explanation": "..."{translation_fields}}}
   ]
 }}
 
@@ -539,19 +684,24 @@ Respond ONLY with the JSON object, no additional text."""
 
         session = []
         for question in selected:
-            indexed = list(enumerate(question.options))
-            random.shuffle(indexed)
+            # One permutation drives both languages, so index N stays the same answer in each
+            order = list(range(len(question.options)))
+            random.shuffle(order)
 
-            session.append({
+            item = {
                 'id': question.id,
                 'question': question.question,
-                'options': [option for _, option in indexed],
-                'correct_index': next(
-                    new_index for new_index, (old_index, _) in enumerate(indexed)
-                    if old_index == question.correct_index
-                ),
+                'options': [question.options[i] for i in order],
+                'correct_index': order.index(question.correct_index),
                 'explanation': question.explanation,
-            })
+            }
+
+            if question.has_translation:
+                item['question_translated'] = question.question_translated
+                item['options_translated'] = [question.options_translated[i] for i in order]
+                item['explanation_translated'] = question.explanation_translated
+
+            session.append(item)
 
         logger.info(f"Built session of {len(session)} questions for quiz {quiz_id}, user {self.user_id}")
         return session

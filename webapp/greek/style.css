@@ -1587,3 +1587,23 @@ h2 {
     opacity: 0.7;
     margin: 8px 0 32px;
 }
+
+.quiz-lang-toggle {
+    background: none;
+    border: 1px solid var(--tg-theme-button-color, #2481cc);
+    color: var(--tg-theme-button-color, #2481cc);
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.quiz-lang-toggle:active { opacity: 0.6; }
+.quiz-lang-toggle.hidden { display: none; }
+
+.quiz-card-langs {
+    font-size: 13px;
+    opacity: 0.6;
+    margin-top: 4px;
+}

@@ -57,7 +57,7 @@ from urllib.parse import parse_qs, unquote
 from aiohttp import web
 import os
 
-from lib.quiz import QuizManager, MAX_SOURCE_CHARS, SESSION_SIZE
+from lib.quiz import QuizManager, MAX_SOURCE_CHARS, SESSION_SIZE, DEFAULT_LANGUAGE
 
 
 # Strong references to background quiz-generation tasks so they are not garbage collected
@@ -896,10 +896,17 @@ class GreekWebApp:
             title = body.get('title', '')
             content = body.get('content', '')
 
+            # 'auto' (or absent) follows the user's Telegram language; 'none' disables translation
+            target_code = body.get('target_language', 'auto')
+            if target_code == 'auto':
+                target_code = user.get('language_code') or DEFAULT_LANGUAGE
+            elif target_code == 'none':
+                target_code = None
+
             manager = QuizManager(user['id'])
 
             try:
-                quiz = await manager.create_quiz(title, content)
+                quiz = await manager.create_quiz(title, content, target_code)
             except ValueError as exc:
                 return web.json_response({'error': str(exc)}, status=400)
 
@@ -981,6 +988,8 @@ class GreekWebApp:
             return web.json_response({
                 'quiz_id': quiz.id,
                 'title': quiz.title,
+                'source_language': quiz.source_language,
+                'target_language': quiz.target_language,
                 'questions': questions
             })
 

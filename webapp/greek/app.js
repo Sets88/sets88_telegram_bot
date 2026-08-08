@@ -2663,6 +2663,7 @@ function renderQuizzes() {
                     ${deleteBtn}
                 </div>
                 <div class="quiz-card-meta">${quiz.question_count} questions · ${created}</div>
+                ${quiz.has_translation ? `<div class="quiz-card-langs">🌐 + ${escapeHtml(QUIZ_LANG_NAMES[quiz.target_language] || quiz.target_language)}</div>` : ''}
                 ${body}
             </div>
         `;
@@ -2712,6 +2713,7 @@ function updateQuizCharCounter() {
 async function createQuiz() {
     const title = document.getElementById('quiz-title-input').value.trim();
     const content = document.getElementById('quiz-content-input').value;
+    const targetLanguage = document.getElementById('quiz-language-select').value;
     const errorEl = document.getElementById('create-quiz-error');
     const confirmBtn = document.getElementById('create-quiz-confirm-btn');
 
@@ -2721,7 +2723,7 @@ async function createQuiz() {
     try {
         await apiRequest('quizzes', {
             method: 'POST',
-            body: JSON.stringify({ title, content })
+            body: JSON.stringify({ title, content, target_language: targetLanguage })
         });
 
         hideCreateQuizModal();
@@ -2770,10 +2772,13 @@ async function startQuiz(quizId) {
         state.quizSession = {
             quizId: quizId,
             title: data.title,
+            targetLanguage: data.target_language,
             questions: data.questions,
             index: 0,
             correct: 0,
-            answered: false
+            answered: false,
+            lastCorrect: null,      // verdict of the current question, for re-rendering on toggle
+            showTranslation: false  // sticky across questions within a session
         };
 
         document.getElementById('quiz-summary').classList.add('hidden');
@@ -2787,22 +2792,106 @@ async function startQuiz(quizId) {
     }
 }
 
+// Native names for the languages the backend can translate into
+const QUIZ_LANG_NAMES = { Russian: 'Русский', English: 'English', Greek: 'Ελληνικά' };
+
+function quizCurrentQuestion() {
+    const session = state.quizSession;
+    return session ? session.questions[session.index] : null;
+}
+
+// The question as it should currently be displayed, honouring the language toggle
+function quizActiveText(question) {
+    const translated = state.quizSession.showTranslation && question.question_translated;
+
+    if (!translated) {
+        return {
+            question: question.question,
+            options: question.options,
+            explanation: question.explanation
+        };
+    }
+
+    return {
+        question: question.question_translated,
+        options: question.options_translated,
+        explanation: question.explanation_translated || question.explanation
+    };
+}
+
+function renderQuizLangToggle() {
+    const session = state.quizSession;
+    const toggle = document.getElementById('quiz-lang-toggle');
+    const question = quizCurrentQuestion();
+
+    if (!session || !question || !question.question_translated) {
+        toggle.classList.add('hidden');
+        return;
+    }
+
+    const target = QUIZ_LANG_NAMES[session.targetLanguage] || session.targetLanguage || 'Перевод';
+    toggle.textContent = session.showTranslation ? '🌐 Оригинал' : `🌐 ${target}`;
+    toggle.classList.remove('hidden');
+}
+
+function renderQuizVerdict() {
+    const session = state.quizSession;
+    if (!session || !session.answered) return;
+
+    const question = quizCurrentQuestion();
+    const text = quizActiveText(question);
+
+    document.getElementById('quiz-verdict').innerHTML = session.lastCorrect
+        ? '<span class="quiz-verdict-correct">✅ Правильно</span>'
+        : `<span class="quiz-verdict-incorrect">❌ Неправильно</span> — ${escapeHtml(text.options[question.correct_index])}`;
+    document.getElementById('quiz-explanation').textContent = text.explanation;
+}
+
+// Swap the visible language in place: the option buttons keep their correct/incorrect
+// styling and disabled state, so toggling mid-question is safe.
+function applyQuizLanguage() {
+    const question = quizCurrentQuestion();
+    if (!question) return;
+
+    const text = quizActiveText(question);
+
+    document.getElementById('quiz-question').textContent = text.question;
+    document.querySelectorAll('#quiz-options .option-btn').forEach((btn, i) => {
+        btn.textContent = text.options[i];
+    });
+
+    renderQuizVerdict();
+    renderQuizLangToggle();
+}
+
+function toggleQuizLanguage() {
+    const session = state.quizSession;
+    if (!session) return;
+
+    session.showTranslation = !session.showTranslation;
+    applyQuizLanguage();
+}
+
 function renderQuizQuestion() {
     const session = state.quizSession;
     if (!session) return;
 
     const question = session.questions[session.index];
     session.answered = false;
+    session.lastCorrect = null;
+
+    const text = quizActiveText(question);
 
     document.getElementById('quiz-counter').textContent = `${session.index + 1} / ${session.questions.length}`;
     document.getElementById('quiz-title').textContent = session.title;
-    document.getElementById('quiz-question').textContent = question.question;
+    document.getElementById('quiz-question').textContent = text.question;
 
-    document.getElementById('quiz-options').innerHTML = question.options.map((option, i) => `
+    document.getElementById('quiz-options').innerHTML = text.options.map((option, i) => `
         <button class="option-btn" data-index="${i}" onclick="handleQuizOptionClick(${i})">${escapeHtml(option)}</button>
     `).join('');
 
     document.getElementById('quiz-result-panel').classList.add('hidden');
+    renderQuizLangToggle();
 }
 
 function handleQuizOptionClick(selectedIndex) {
@@ -2832,10 +2921,8 @@ function handleQuizOptionClick(selectedIndex) {
         tg.HapticFeedback.notificationOccurred(isCorrect ? 'success' : 'error');
     }
 
-    document.getElementById('quiz-verdict').innerHTML = isCorrect
-        ? '<span class="quiz-verdict-correct">✅ Правильно</span>'
-        : `<span class="quiz-verdict-incorrect">❌ Неправильно</span> — ${escapeHtml(question.options[question.correct_index])}`;
-    document.getElementById('quiz-explanation').textContent = question.explanation;
+    session.lastCorrect = isCorrect;
+    renderQuizVerdict();
 
     const isLast = session.index === session.questions.length - 1;
     document.getElementById('quiz-next-btn').textContent = isLast ? 'Результат' : 'Далее';
@@ -2864,6 +2951,7 @@ async function finishQuiz() {
 
     document.getElementById('quiz-result-panel').classList.add('hidden');
     document.getElementById('quiz-content').style.display = 'none';
+    document.getElementById('quiz-lang-toggle').classList.add('hidden');
 
     const summary = document.getElementById('quiz-summary');
     summary.innerHTML = `
@@ -2888,6 +2976,7 @@ function exitQuiz() {
     state.quizSession = null;
     document.getElementById('quiz-summary').classList.add('hidden');
     document.getElementById('quiz-result-panel').classList.add('hidden');
+    document.getElementById('quiz-lang-toggle').classList.add('hidden');
     document.getElementById('quiz-content').style.display = 'block';
     showScreen('main-screen');
     loadQuizzes();
@@ -3299,6 +3388,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Quiz: session screen
     document.getElementById('quiz-next-btn').addEventListener('click', nextQuizQuestion);
     document.getElementById('exit-quiz-btn').addEventListener('click', exitQuiz);
+    document.getElementById('quiz-lang-toggle').addEventListener('click', toggleQuizLanguage);
 
     // Fetch words button - use event delegation to handle dynamic content
     document.addEventListener('click', (e) => {

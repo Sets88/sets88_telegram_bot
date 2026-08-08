@@ -16,7 +16,7 @@
         });
     </script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="style.css?a=11">
+    <link rel="stylesheet" href="style.css?a=12">
 </head>
 <body>
     <div id="app">
@@ -138,6 +138,7 @@
         <div id="quiz-screen" class="screen">
             <div class="exercise-header">
                 <button id="exit-quiz-btn" class="btn btn-secondary">Exit</button>
+                <button id="quiz-lang-toggle" class="quiz-lang-toggle hidden"></button>
                 <div id="quiz-counter"></div>
             </div>
 
@@ -170,6 +171,14 @@
                 <input type="text" id="quiz-title-input" class="input" placeholder="Title (optional)">
                 <textarea id="quiz-content-input" class="input quiz-textarea" placeholder="# Paste your markdown here..."></textarea>
                 <div id="quiz-char-counter" class="quiz-char-counter"></div>
+                <label class="form-label" for="quiz-language-select">Перевод вопросов:</label>
+                <select id="quiz-language-select" class="input">
+                    <option value="auto" selected>Авто — язык моего Telegram</option>
+                    <option value="ru">Русский</option>
+                    <option value="en">English</option>
+                    <option value="el">Ελληνικά</option>
+                    <option value="none">Без перевода</option>
+                </select>
                 <div id="create-quiz-error" class="error-message hidden"></div>
                 <div class="modal-buttons">
                     <button id="create-quiz-cancel-btn" class="btn btn-secondary">Cancel</button>
@@ -587,6 +596,6 @@
         </div>
     </div>
 
-    <script src="app.js?a=11"></script>
+    <script src="app.js?a=12"></script>
 </body>
 </html>
