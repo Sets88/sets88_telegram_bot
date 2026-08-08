@@ -22,6 +22,7 @@ DEFAULT_MODEL = "openai/gpt-5-mini"
 
 MAX_SOURCE_CHARS = 150_000
 CHUNK_TARGET_CHARS = 2_500
+MIN_CHUNK_CHARS = 400  # below this a chunk is too thin to be worth its own LLM call
 CHARS_PER_QUESTION = 150
 MIN_QUESTIONS = 20
 MAX_QUESTIONS = 1_200
@@ -163,22 +164,53 @@ class Quiz:
 
 # ========== Pure Helpers ==========
 
+def _split_headed_blocks(content: str) -> List[tuple]:
+    """
+    Split on markdown headings into (block_text, ancestor_heading_lines) pairs.
+    The ancestors let a later chunk state which section it came from, so the model
+    never sees an orphan fragment with no idea what it is about.
+    """
+    parts = [b for b in re.split(r'(?m)^(?=#{1,6} )', content) if b.strip()]
+
+    blocks = []
+    stack: List[tuple] = []  # [(level, heading_line)]
+
+    for part in parts:
+        heading = re.match(r'^(#{1,6})\s+(.*)', part.splitlines()[0])
+        ancestors = tuple(h for _, h in stack)
+        blocks.append((part, ancestors))
+
+        if heading:
+            level = len(heading.group(1))
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            stack.append((level, part.splitlines()[0].strip()))
+
+    return blocks
+
+
 def split_markdown(content: str) -> List[str]:
     """
     Split markdown into chunks of roughly CHUNK_TARGET_CHARS characters.
     Prefers heading boundaries, then paragraph boundaries, then a raw slice.
+    Every chunk is prefixed with the headings of the section it belongs to.
     """
-    blocks = [b for b in re.split(r'(?m)^(?=#{1,3} )', content) if b.strip()]
+    blocks = _split_headed_blocks(content)
     if not blocks:
         return []
 
     # Hard-split any block that is bigger than the target on its own
-    sized_blocks: List[str] = []
-    for block in blocks:
+    sized_blocks: List[tuple] = []
+    for block, ancestors in blocks:
         if len(block) <= CHUNK_TARGET_CHARS:
-            sized_blocks.append(block)
+            sized_blocks.append((block, ancestors))
             continue
 
+        # Continuations of a split section repeat that section's own heading too
+        own = block.splitlines()[0].strip()
+        cont_ancestors = ancestors + (own,) if own.startswith('#') else ancestors
+
+        pieces: List[str] = []
         current = ''
         for paragraph in block.split('\n\n'):
             piece = paragraph if not current else f'{current}\n\n{paragraph}'
@@ -187,34 +219,53 @@ def split_markdown(content: str) -> List[str]:
                 continue
 
             if current:
-                sized_blocks.append(current)
+                pieces.append(current)
                 current = ''
 
             # A single paragraph that still does not fit - slice it raw
             while len(paragraph) > CHUNK_TARGET_CHARS:
-                sized_blocks.append(paragraph[:CHUNK_TARGET_CHARS])
+                pieces.append(paragraph[:CHUNK_TARGET_CHARS])
                 paragraph = paragraph[CHUNK_TARGET_CHARS:]
             current = paragraph
 
         if current:
-            sized_blocks.append(current)
+            pieces.append(current)
 
-    # Greedily merge neighbouring blocks up to the target size
-    chunks: List[str] = []
-    current = ''
-    for block in sized_blocks:
+        for i, piece in enumerate(pieces):
+            sized_blocks.append((piece, ancestors if i == 0 else cont_ancestors))
+
+    # Greedily merge neighbouring blocks up to the target size. A chunk inherits the
+    # ancestors of the first block in it - that is the section it opens in.
+    chunks: List[tuple] = []
+    current, current_ancestors = '', ()
+    for block, ancestors in sized_blocks:
         piece = block if not current else f'{current}\n\n{block}'
-        if len(piece) <= CHUNK_TARGET_CHARS:
+        # Overshoot the target rather than emit a chunk too thin to quiz on
+        if len(piece) <= CHUNK_TARGET_CHARS or len(current) < MIN_CHUNK_CHARS:
+            if not current:
+                current_ancestors = ancestors
             current = piece
         else:
-            if current:
-                chunks.append(current)
-            current = block
+            chunks.append((current, current_ancestors))
+            current, current_ancestors = block, ancestors
 
     if current:
-        chunks.append(current)
+        # A thin tail belongs with the previous chunk, not on its own
+        if chunks and len(current) < MIN_CHUNK_CHARS:
+            tail, tail_ancestors = chunks.pop()
+            chunks.append((f'{tail}\n\n{current}', tail_ancestors))
+        else:
+            chunks.append((current, current_ancestors))
 
-    return [c for c in chunks if c.strip()]
+    # Prefix each chunk with the headings above it, so it reads as part of a document
+    out = []
+    for text, ancestors in chunks:
+        if not text.strip():
+            continue
+        missing = [h for h in ancestors if h not in text]
+        out.append('\n'.join(missing) + '\n\n' + text if missing else text)
+
+    return out
 
 
 def plan_question_counts(chunks: List[str]) -> List[int]:
@@ -273,6 +324,79 @@ _META_CACHE: Dict[str, Any] = {}
 def normalize_question(text: str) -> str:
     """Normalized form of a question, used to drop duplicates across chunks"""
     return re.sub(r'\W+', ' ', text.lower()).strip()
+
+
+def build_response_schema(translated: bool) -> Dict[str, Any]:
+    """
+    JSON schema the model is constrained to. This is what actually guarantees a parseable
+    response - the model reliably mangles quoting when writing Greek text by hand.
+    """
+    properties = {
+        'question': {'type': 'string'},
+        'options': {'type': 'array', 'items': {'type': 'string'}},
+        'correct_index': {'type': 'integer'},
+        'explanation': {'type': 'string'},
+    }
+
+    if translated:
+        properties.update({
+            'question_translated': {'type': 'string'},
+            'options_translated': {'type': 'array', 'items': {'type': 'string'}},
+            'explanation_translated': {'type': 'string'},
+        })
+
+    return {
+        'type': 'object',
+        'properties': {
+            'questions': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': properties,
+                    'required': list(properties),
+                    'additionalProperties': False,
+                },
+            },
+        },
+        'required': ['questions'],
+        'additionalProperties': False,
+    }
+
+
+def salvage_question_objects(content: str) -> List[Dict[str, Any]]:
+    """
+    Recover whatever question objects can still be parsed from a malformed payload.
+    A single stray quote used to cost the entire chunk; this keeps the good ones.
+    """
+    objects = []
+    starts: List[int] = []
+    in_string = False
+    escaped = False
+
+    for i, ch in enumerate(content):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch == '{':
+            starts.append(i)
+        elif ch == '}' and starts:
+            # Objects close innermost-first, so each question is tried before its wrapper
+            try:
+                obj = json.loads(content[starts.pop():i + 1])
+                if isinstance(obj, dict) and 'question' in obj:
+                    objects.append(obj)
+            except json.JSONDecodeError:
+                pass
+
+    return objects
 
 
 def detect_script(text: str) -> Optional[str]:
@@ -520,6 +644,7 @@ class QuizManager:
         try:
             quiz = await self.load_quiz(quiz_id)
             target_language = quiz.target_language if quiz else None
+            doc_title = quiz.title if quiz else None
 
             chunks = split_markdown(content)
             counts = plan_question_counts(chunks)
@@ -527,7 +652,7 @@ class QuizManager:
 
             async def worker(chunk: str, count: int) -> List[QuizQuestion]:
                 async with semaphore:
-                    return await self._generate_chunk(chunk, count, target_language)
+                    return await self._generate_chunk(chunk, count, target_language, doc_title)
 
             tasks = [asyncio.create_task(worker(c, n)) for c, n in zip(chunks, counts)]
 
@@ -584,9 +709,11 @@ class QuizManager:
         self,
         chunk: str,
         count: int,
-        target_language: Optional[str] = None
+        target_language: Optional[str] = None,
+        doc_title: Optional[str] = None
     ) -> List[QuizQuestion]:
         """Generate `count` questions from one chunk of material via OpenRouter"""
+        subject = f'\nSUBJECT OF THE WHOLE DOCUMENT: "{doc_title}"\n' if doc_title else ''
         if target_language:
             translation_rules = f"""
 - Additionally translate every question into {target_language}:
@@ -604,14 +731,50 @@ class QuizManager:
             translation_rules = ''
             translation_fields = ''
 
-        prompt = f"""You are creating a multiple-choice quiz from study material.
+        prompt = f"""You are writing multiple-choice quiz questions that will be printed on
+flashcards. Each card shows ONE question and its options — nothing else.
+{subject}
+# THE RULE THAT OVERRIDES EVERYTHING ELSE
 
-MATERIAL:
+The material below is a private reference for YOU ONLY. The person answering has never
+seen it, has no access to it, and does not even know a source document exists. As far as
+they are concerned, your question is the only text in the world.
+
+So a question may never point at the material. Not "in the text", not "in the excerpt",
+not "in the example", not "as mentioned", not "as given", not "according to the passage",
+not "στο κείμενο", not "στο απόσπασμα", not "στο παράδειγμα", not "όπως αναφέρεται",
+not "όπως δίνεται", not "σύμφωνα με το υλικό", not "в тексте", not "как указано".
+Not in ANY language, not in ANY phrasing. If you catch yourself writing such a phrase,
+the question is broken: rewrite it so it names its own subject, or delete it.
+
+  BAD:  "Ποια είναι η κατάληξη του πρώτου προσώπου όπως αναφέρεται;"
+  GOOD: "Ποια είναι η κατάληξη του πρώτου προσώπου ενικού του ρήματος «γράφω»;"
+
+  BAD:  "Что говорится в тексте о хлоропластах?"
+  GOOD: "Какую функцию выполняют хлоропласты в растительной клетке?"
+
+  BAD:  "Что означает эта фраза?"
+  GOOD: "Что означает греческая фраза «Είμαι από…»?"
+
+Follow-on rules:
+- Name the subject INSIDE the question: the exact term, word, rule or situation asked about.
+- Never use bare pointers ("этот", "эта фраза", "this", "these", "the following",
+  "αυτό", "το παρακάτω"). Restate the thing in full instead.
+- The headings above the excerpt and the document subject tell you the domain. Fold that
+  into the wording ONLY when the question would otherwise be ambiguous (e.g. "Στα νέα
+  ελληνικά, ..."). Do NOT mechanically prefix every question with the document subject —
+  most questions should read naturally without it.
+- Ask about the SUBSTANCE, never the presentation: never how many times something is
+  repeated, how long a section is, what order items appear in, or how the text is laid out.
+- If a fact cannot become a self-contained question, SKIP IT and return fewer questions.
+  Fewer good questions beat padding with unanswerable ones.
+
+# MATERIAL (your private reference)
 <<<
 {chunk}
 >>>
 
-Create exactly {count} questions based ONLY on the material above.
+Create up to {count} questions based ONLY on the material above.
 
 This is a dense quiz: cover the material exhaustively. Every distinct fact, definition,
 term, number, name, step, cause and consequence deserves its own question — including
@@ -620,13 +783,20 @@ minor details, not just the main points.
 Requirements:
 - Each question has between {MIN_OPTIONS} and {MAX_OPTIONS} answer options, with EXACTLY ONE correct
 - Wrong options must be plausible and on-topic, not obviously absurd
+- Options must also be self-contained: each one readable without the question's context
 - Every question must test a DIFFERENT fact. Never ask the same thing twice, and never
   reword an earlier question. If you run out of distinct facts, return fewer questions
   rather than repeating yourself
-- Questions must be self-contained: never refer to "the text", "the material" or "above"
 - "correct_index" is the 0-based index of the correct option
 - "explanation" is 1-2 sentences saying why the correct answer is right
 - Write questions, options and explanations in the SAME LANGUAGE as the material{translation_rules}
+
+FINAL CHECK before you answer. Re-read every question you wrote and ask:
+1. Does it contain any phrase pointing at a text, excerpt, example, passage or "as
+   mentioned/given/stated"? If yes — rewrite it without that phrase, or delete it.
+2. Could someone who has never seen the material answer it from the question alone?
+   If no — rewrite it so it names its own subject, or delete it.
+Deleting is always allowed. Returning fewer questions is the correct outcome.
 
 Format as a valid JSON object:
 {{
@@ -637,7 +807,34 @@ Format as a valid JSON object:
 
 Respond ONLY with the JSON object, no additional text."""
 
+        schema = build_response_schema(bool(target_language))
+        best: List[QuizQuestion] = []
+
+        # The schema should make a malformed payload impossible, but a truncated or
+        # otherwise broken response still costs the whole chunk - so salvage and retry once.
+        for attempt in range(2):
+            questions, clean = await self._request_chunk(prompt, schema)
+
+            if len(questions) > len(best):
+                best = questions
+
+            if clean or len(best) >= count:
+                break
+
+            if attempt == 0:
+                logger.warning(
+                    f"Retrying chunk after a malformed response "
+                    f"(salvaged {len(best)}/{count} questions)"
+                )
+
+        logger.info(f"Generated {len(best)}/{count} questions from a {len(chunk)}-char chunk")
+        return best
+
+    async def _request_chunk(self, prompt: str, schema: Dict[str, Any]) -> tuple:
+        """One LLM call. Returns (questions, response_was_valid_json)."""
         content = ''
+        clean = True
+
         try:
             response = await openrouter_instance.client.responses.create(
                 model=DEFAULT_MODEL,
@@ -646,28 +843,41 @@ Respond ONLY with the JSON object, no additional text."""
                 ],
                 reasoning={
                     "effort": "minimal",
+                },
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "quiz_questions",
+                        "strict": True,
+                        "schema": schema,
+                    }
                 }
             )
 
             content = response.output_text
-            data = json.loads(content)
+
+            try:
+                raws = json.loads(content).get('questions', [])
+            except json.JSONDecodeError as exc:
+                clean = False
+                raws = salvage_question_objects(content)
+                logger.error(
+                    f"Malformed JSON from OpenRouter ({exc}); salvaged {len(raws)} question objects"
+                )
+                if not raws:
+                    logger.error(f"Response was: {content}")
 
             questions = []
-            for raw in data.get('questions', []):
+            for raw in raws:
                 question = validate_question(raw)
                 if question:
                     questions.append(question)
 
-            logger.info(f"Generated {len(questions)}/{count} questions from a {len(chunk)}-char chunk")
-            return questions
+            return questions, clean
 
-        except json.JSONDecodeError as exc:
-            logger.error(f"Failed to parse OpenRouter JSON response for quiz chunk: {exc}")
-            logger.error(f"Response was: {content}")
-            return []
         except Exception as exc:
             logger.error(f"Error generating quiz questions from OpenRouter: {exc}")
-            return []
+            return [], False
 
     # ========== Practice Sessions ==========
 
